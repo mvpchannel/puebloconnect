@@ -11,3 +11,7 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 *.tsbuildinfo
+
+# Production secrets
+.env
+.env.production

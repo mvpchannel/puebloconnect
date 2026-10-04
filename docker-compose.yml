@@ -1,0 +1,39 @@
+# Production stack: the Next.js app + Caddy (automatic HTTPS certificates).
+# Usage: see docs/DEPLOY.md
+services:
+  app:
+    build:
+      context: .
+      args:
+        APP_URL: ${APP_URL}
+    env_file: .env.production
+    restart: unless-stopped
+    volumes:
+      - pc_data:/app/data
+      - pc_uploads:/app/public/uploads
+    expose:
+      - "3000"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Caddy serves member uploads straight from disk: Next.js only serves
+      # files that existed in public/ at build time, not ones added later.
+      - pc_uploads:/srv/uploads:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pc_data:
+  pc_uploads:
+  caddy_data:
+  caddy_config:

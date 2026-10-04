@@ -1,0 +1,23 @@
+{$DOMAIN} {
+	encode gzip zstd
+
+	handle /uploads/* {
+		root * /srv
+		file_server
+	}
+
+	handle {
+		reverse_proxy app:3000
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}
+
+# Send www.<domain> to the main address (add a DNS record for www too).
+www.{$DOMAIN} {
+	redir https://{$DOMAIN}{uri} permanent
+}

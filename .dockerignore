@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+.env*
+data/*.db*
+data/outbox
+public/uploads
+scratch_out
+*.tsbuildinfo

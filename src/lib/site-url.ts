@@ -3,8 +3,8 @@
 // robots.ts, the Open Graph/Twitter tags in src/app/layout.tsx) — so there
 // aren't three different hardcoded domains to keep in sync.
 //
-// TODO: set the APP_URL env var to the real production domain once it's
-// known (same env var src/lib/email.ts already reads for links inside
-// transactional emails, just without that file's localhost fallback —
-// a public sitemap/OG tag should never default to localhost).
+// Set APP_URL to the real production domain (see docs/DEPLOY.md). It must be
+// present at BUILD time too, because sitemap/robots/OG metadata are baked in.
+// Same env var src/lib/email.ts reads for links inside transactional emails;
+// a public sitemap/OG tag should never default to localhost.
 export const SITE_URL = process.env.APP_URL || "https://pueblo.connect";
