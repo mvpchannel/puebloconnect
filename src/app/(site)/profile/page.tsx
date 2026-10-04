@@ -4,12 +4,27 @@ import Footer from "@/components/Footer";
 import Sidebar from "@/components/Sidebar";
 import PostComposer from "@/components/PostComposer";
 import PostCard from "@/components/PostCard";
+import { getCurrentUser } from "@/lib/require-user";
+import { getUserById, listPostsByAuthor } from "@/lib/db";
+import { formatRelativeTime } from "@/lib/time";
 
 export const metadata: Metadata = {
   title: "Timeline",
 };
 
-export default function ProfilePage() {
+// Real posts now: this member's own posts (any target), newest first —
+// see src/lib/db.ts listPostsByAuthor. The page still works logged out
+// (an anonymous visitor just can't post), same honest-placeholder pattern
+// as the rest of this app for the parts not built yet (followers, photos,
+// videos, friends tabs).
+export default async function ProfilePage() {
+  const session = await getCurrentUser();
+  const user = session ? getUserById(session.sub) : null;
+  const posts = session ? listPostsByAuthor(session.sub, session.sub) : [];
+  const displayName = user
+    ? [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username
+    : "Pueblo Connect";
+
   return (
     <>
       <Header />
@@ -37,14 +52,14 @@ export default function ProfilePage() {
                 <div className="timeline-info">
                   <ul>
                     <li className="admin-name">
-                      <h5>Pueblo Connect&nbsp;</h5>
+                      <h5>{displayName}&nbsp;</h5>
                       <span>Member</span>
                     </li>
                     <li>
                       <a className="active" href="#" title="" data-ripple="">Timeline</a>
                       <a className="" href="#" title="" data-ripple="">Photos</a>
                       <a className="" href="#" title="" data-ripple="">Videos</a>
-                      <a className="" href="#" title="" data-ripple="">Friends</a>
+                      <a className="" href="/friends" title="" data-ripple="">Friends</a>
                     </li>
                   </ul>
                 </div>
@@ -64,14 +79,32 @@ export default function ProfilePage() {
                     <Sidebar />
                   </div>
                   <div className="col-lg-6">
-                    <PostComposer />
+                    <PostComposer isLoggedIn={Boolean(session)} />
                     <div className="loadMore">
-                      <PostCard
-                        authorName="You"
-                        authorImage="/images/resources/admin3.jpg"
-                        publishedLabel="just now"
-                        text="This is my timeline on the new Pueblo Connect."
-                      />
+                      {session && posts.length === 0 && (
+                        <div className="central-meta item">
+                          <div style={{ padding: "24px", textAlign: "center", color: "#888" }}>
+                            You haven&apos;t posted anything yet.
+                          </div>
+                        </div>
+                      )}
+                      {posts.map((post) => (
+                        <PostCard
+                          key={post.id}
+                          postId={post.id}
+                          authorName={displayName}
+                          authorImage={
+                            post.author_profile_photo_path ||
+                            "/images/defaults/default-avatar-male.jpg"
+                          }
+                          publishedLabel={formatRelativeTime(post.created_at)}
+                          text={post.body}
+                          initialLikeCount={post.like_count}
+                          initialLiked={Boolean(post.liked_by_viewer)}
+                          initialCommentCount={post.comment_count}
+                          isLoggedIn={Boolean(session)}
+                        />
+                      ))}
                     </div>
                   </div>
                 </div>

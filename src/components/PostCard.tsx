@@ -1,49 +1,149 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type PostCardProps = {
+  postId: number;
   authorName: string;
   authorImage: string;
   publishedLabel: string;
   text: string;
-  initialLikes?: number;
-  initialComments?: number;
+  initialLikeCount?: number;
+  initialLiked?: boolean;
+  initialCommentCount?: number;
+  isLoggedIn: boolean;
 };
 
-/**
- * One feed post. The like button is real, working client-side state (click
- * it — the count changes). It is NOT persisted anywhere: there is no
- * backend yet, so a page refresh resets it. That's the honest line between
- * "works in the browser" and "works for real" — see FUNCTIONALITY_STATUS.md.
- */
+type Comment = {
+  id: number;
+  authorName: string;
+  authorProfilePhotoPath: string | null;
+  body: string;
+};
+
+// One feed post, backed for real by /api/posts/:id/like and
+// /api/posts/:id/comments (src/app/api/posts/[id]/*), which in turn read
+// and write the posts/post_likes/post_comments tables in src/lib/db.ts.
+// Likes and comments persist — a page refresh keeps them, unlike the
+// earlier client-only placeholder.
 export default function PostCard({
+  postId,
   authorName,
   authorImage,
   publishedLabel,
   text,
-  initialLikes = 0,
-  initialComments = 0,
+  initialLikeCount = 0,
+  initialLiked = false,
+  initialCommentCount = 0,
+  isLoggedIn,
 }: PostCardProps) {
-  const [liked, setLiked] = useState(false);
-  const [likeCount, setLikeCount] = useState(initialLikes);
-  const [commentText, setCommentText] = useState("");
-  const [comments, setComments] = useState<string[]>([]);
+  const [liked, setLiked] = useState(initialLiked);
+  const [likeCount, setLikeCount] = useState(initialLikeCount);
+  const [likeBusy, setLikeBusy] = useState(false);
 
-  function toggleLike() {
-    setLiked((wasLiked) => {
-      setLikeCount((count) => (wasLiked ? count - 1 : count + 1));
-      return !wasLiked;
-    });
+  const [commentText, setCommentText] = useState("");
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [commentCount, setCommentCount] = useState(initialCommentCount);
+  const [commentsLoaded, setCommentsLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Comments are loaded lazily on mount rather than passed down from the
+  // server — keeps the initial newsfeed page fetch to one query per post
+  // (the comment_count) instead of N+1 full comment lists for posts
+  // nobody expands.
+  useEffect(() => {
+    let cancelled = false;
+    if (commentCount === 0) {
+      setCommentsLoaded(true);
+      return;
+    }
+    fetch(`/api/posts/${postId}/comments`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        setComments(
+          (data.comments || []).map((c: { id: number; authorName: string; authorProfilePhotoPath: string | null; body: string }) => ({
+            id: c.id,
+            authorName: c.authorName,
+            authorProfilePhotoPath: c.authorProfilePhotoPath,
+            body: c.body,
+          }))
+        );
+        setCommentsLoaded(true);
+      })
+      .catch(() => setCommentsLoaded(true));
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [postId]);
+
+  async function toggleLike() {
+    if (!isLoggedIn) {
+      setError("Log in to like posts.");
+      return;
+    }
+    if (likeBusy) return;
+    setLikeBusy(true);
+    setError(null);
+    // Optimistic update, corrected from the server response below.
+    const wasLiked = liked;
+    setLiked(!wasLiked);
+    setLikeCount((c) => (wasLiked ? c - 1 : c + 1));
+    try {
+      const res = await fetch(`/api/posts/${postId}/like`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setLiked(wasLiked);
+        setLikeCount((c) => (wasLiked ? c + 1 : c - 1));
+        setError(data.error || "Couldn't update that like.");
+        return;
+      }
+      setLiked(data.liked);
+      setLikeCount(data.likeCount);
+    } catch {
+      setLiked(wasLiked);
+      setLikeCount((c) => (wasLiked ? c + 1 : c - 1));
+      setError("Couldn't reach the server.");
+    } finally {
+      setLikeBusy(false);
+    }
   }
 
-  function submitComment(e: React.FormEvent) {
+  async function submitComment(e: React.FormEvent) {
     e.preventDefault();
-    if (!commentText.trim()) return;
-    // STATUS: client-side only — not saved to a server. Refreshing the page
-    // loses this comment. Needs a real posts/comments API.
-    setComments((prev) => [...prev, commentText.trim()]);
-    setCommentText("");
+    if (!isLoggedIn) {
+      setError("Log in to comment.");
+      return;
+    }
+    const trimmed = commentText.trim();
+    if (!trimmed) return;
+    setError(null);
+    try {
+      const res = await fetch(`/api/posts/${postId}/comments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Couldn't post that comment.");
+        return;
+      }
+      setComments((prev) => [
+        ...prev,
+        {
+          id: data.comment.id,
+          authorName: data.comment.authorName,
+          authorProfilePhotoPath: data.comment.authorProfilePhotoPath,
+          body: data.comment.body,
+        },
+      ]);
+      setCommentCount((c) => c + 1);
+      setCommentText("");
+    } catch {
+      setError("Couldn't reach the server.");
+    }
   }
 
   return (
@@ -61,6 +161,9 @@ export default function PostCard({
             <div className="description">
               <p>{text}</p>
             </div>
+            {error && (
+              <div style={{ color: "#c0392b", fontSize: "13px", margin: "4px 0" }}>{error}</div>
+            )}
             <div className="we-video-info">
               <ul>
                 <li>
@@ -80,7 +183,7 @@ export default function PostCard({
                 <li>
                   <span className="comment" data-toggle="tooltip" title="Comments">
                     <i className="fa fa-comments-o" />
-                    <ins>{initialComments + comments.length}</ins>
+                    <ins>{commentCount}</ins>
                   </span>
                 </li>
               </ul>
@@ -89,14 +192,21 @@ export default function PostCard({
         </div>
         <div className="coment-area">
           <ul className="we-comet">
-            {comments.map((c, i) => (
-              <li className="post-comment" key={i}>
+            {!commentsLoaded && commentCount > 0 && (
+              <li className="post-comment">
+                <div className="post-comt-box">
+                  <p style={{ color: "#999" }}>Loading comments…</p>
+                </div>
+              </li>
+            )}
+            {comments.map((c) => (
+              <li className="post-comment" key={c.id}>
                 <div className="comet-avatar">
-                  <img src="/images/resources/admin.jpg" alt="" />
+                  <img src={c.authorProfilePhotoPath || "/images/resources/admin.jpg"} alt="" />
                 </div>
                 <div className="post-comt-box">
-                  <h5>You</h5>
-                  <p>{c}</p>
+                  <h5>{c.authorName}</h5>
+                  <p>{c.body}</p>
                 </div>
               </li>
             ))}
@@ -107,7 +217,9 @@ export default function PostCard({
               <div className="post-comt-box">
                 <form method="post" onSubmit={submitComment}>
                   <textarea
-                    placeholder="Post your comment (press Enter to post)"
+                    placeholder={
+                      isLoggedIn ? "Post your comment (press Enter to post)" : "Log in to comment"
+                    }
                     value={commentText}
                     onChange={(e) => setCommentText(e.target.value)}
                     onKeyDown={(e) => {

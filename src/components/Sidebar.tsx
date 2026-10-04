@@ -20,11 +20,15 @@ export default function Sidebar() {
           </li>
           <li>
             <i className="ti-files" />
-            <Link href="/login" title="">My pages</Link>
+            <Link href="/groups" title="">Groups</Link>
           </li>
           <li>
             <i className="ti-user" />
-            <Link href="/profile" title="">Friends</Link>
+            <Link href="/friends" title="">Friends</Link>
+          </li>
+          <li>
+            <i className="ti-location-pin" />
+            <Link href="/nearby" title="">Members Near You</Link>
           </li>
           <li>
             <i className="ti-image" />
@@ -32,7 +36,7 @@ export default function Sidebar() {
           </li>
           <li>
             <i className="ti-video-camera" />
-            <Link href="/profile" title="">Videos</Link>
+            <Link href="/live" title="">Pueblo Live</Link>
           </li>
         </ul>
       </div>

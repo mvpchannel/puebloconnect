@@ -3,23 +3,56 @@ import Link from "next/link";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Sidebar from "@/components/Sidebar";
-import MessageComposer from "./MessageComposer";
+import MessagesClient from "./MessagesClient";
+import { getCurrentUser } from "@/lib/require-user";
+import { listConversations, getUserById } from "@/lib/db";
 
 export const metadata: Metadata = {
   title: "Messages",
 };
 
-// Ported from winku-html/messages.html rather than inbox.html — messages.html
-// is a single combined "contact list + conversation" view, which reads as
-// "the messages page" more directly than inbox.html's multi-pane
-// folders/Compose/flags email-client UI (that's a different, heavier
-// feature not asked for here). Member-only — gated in src/middleware.ts.
-//
-// STATUS: needs backend/API — sample contacts/conversation shown for
-// layout; no real messaging system exists yet. The composer at the bottom
-// has a real onSubmit (MessageComposer.tsx) that honestly says sending
-// isn't wired up, rather than silently doing nothing.
-export default function MessagesPage() {
+// Real backend now: src/app/api/messages/* and the messages table in
+// src/lib/db.ts. Gated to logged-in members by src/middleware.ts.
+// ?to=<userId> (used by a "Message" link on a profile) opens that thread
+// immediately even before any message has been sent.
+export default async function MessagesPage({
+  searchParams,
+}: {
+  searchParams: { to?: string };
+}) {
+  const session = await getCurrentUser();
+  // middleware.ts already redirects logged-out visitors to /login before
+  // this ever renders, but keep this honest in case that ever changes.
+  if (!session) {
+    return (
+      <>
+        <Header />
+        <section>
+          <div className="gap gray-bg">
+            <div className="container">
+              <div style={{ padding: 40, textAlign: "center" }}>
+                <Link href="/login" title="">Log in</Link> to view your messages.
+              </div>
+            </div>
+          </div>
+        </section>
+        <Footer />
+      </>
+    );
+  }
+
+  const conversations = listConversations(session.sub).map((c) => ({
+    otherUserId: c.other_user_id,
+    otherName: [c.other_first_name, c.other_last_name].filter(Boolean).join(" ") || c.other_username,
+    otherProfilePhotoPath: c.other_profile_photo_path,
+    lastBody: c.last_body,
+    unreadCount: c.unread_count,
+  }));
+
+  const openUserIdParam = searchParams?.to ? Number(searchParams.to) : null;
+  const openUser =
+    openUserIdParam && Number.isInteger(openUserIdParam) ? getUserById(openUserIdParam) : null;
+
   return (
     <>
       <Header />
@@ -51,76 +84,18 @@ export default function MessagesPage() {
               </div>
               <div className="col-lg-9">
                 <div className="central-meta">
-                  <div className="messages">
-                    <h5 className="f-title"><i className="ti-bell" /> All Messages</h5>
-                    <div className="message-box">
-                      <ul className="peoples">
-                        <li>
-                          <figure>
-                            <img src="/images/resources/friend-avatar2.jpg" alt="" />
-                            <span className="status f-online" />
-                          </figure>
-                          <div className="people-name"><span>Molly Cyrus</span></div>
-                        </li>
-                        <li>
-                          <figure>
-                            <img src="/images/resources/friend-avatar3.jpg" alt="" />
-                            <span className="status f-away" />
-                          </figure>
-                          <div className="people-name"><span>Andrew</span></div>
-                        </li>
-                        <li>
-                          <figure>
-                            <img src="/images/resources/friend-avatar.jpg" alt="" />
-                            <span className="status f-online" />
-                          </figure>
-                          <div className="people-name"><span>Jason Bourne</span></div>
-                        </li>
-                        <li>
-                          <figure>
-                            <img src="/images/resources/friend-avatar4.jpg" alt="" />
-                            <span className="status off-online" />
-                          </figure>
-                          <div className="people-name"><span>Sarah Grey</span></div>
-                        </li>
-                        <li>
-                          <figure>
-                            <img src="/images/resources/friend-avatar5.jpg" alt="" />
-                            <span className="status f-online" />
-                          </figure>
-                          <div className="people-name"><span>Bill Doe</span></div>
-                        </li>
-                        <li>
-                          <figure>
-                            <img src="/images/resources/friend-avatar6.jpg" alt="" />
-                            <span className="status f-away" />
-                          </figure>
-                          <div className="people-name"><span>Shen Cornery</span></div>
-                        </li>
-                      </ul>
-                      <div className="peoples-mesg-box">
-                        <div className="conversation-head">
-                          <figure><img src="/images/resources/friend-avatar.jpg" alt="" /></figure>
-                          <span>Jason Bourne <i>online</i></span>
-                        </div>
-                        <ul className="chatting-area">
-                          <li className="you">
-                            <figure><img src="/images/resources/userlist-2.jpg" alt="" /></figure>
-                            <p>Hey, did you see the new deals on Pueblo Connect?</p>
-                          </li>
-                          <li className="me">
-                            <figure><img src="/images/resources/userlist-1.jpg" alt="" /></figure>
-                            <p>Not yet, checking it out now</p>
-                          </li>
-                          <li className="you">
-                            <figure><img src="/images/resources/userlist-2.jpg" alt="" /></figure>
-                            <p>There's a good one from the coffee shop downtown</p>
-                          </li>
-                        </ul>
-                        <MessageComposer />
-                      </div>
-                    </div>
-                  </div>
+                  <MessagesClient
+                    currentUserId={session.sub}
+                    initialConversations={conversations}
+                    initialOpenUserId={openUser ? openUser.id : undefined}
+                    initialOpenName={
+                      openUser
+                        ? [openUser.first_name, openUser.last_name].filter(Boolean).join(" ") ||
+                          openUser.username
+                        : undefined
+                    }
+                    initialOpenPhoto={openUser?.profile_photo_path ?? undefined}
+                  />
                 </div>
               </div>
             </div>

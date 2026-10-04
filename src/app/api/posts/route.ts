@@ -1,0 +1,113 @@
+import { NextRequest, NextResponse } from "next/server";
+import { requireUser } from "@/lib/require-user";
+import { createPost, listPosts, TargetType } from "@/lib/db";
+
+const VALID_TARGET_TYPES: TargetType[] = ["feed", "group", "business", "event"];
+const MAX_POST_LENGTH = 5000;
+
+// GET /api/posts?targetType=feed&targetId= — list posts for the newsfeed
+// (default) or, later, a group/business/event wall. Viewing the feed
+// doesn't require being logged in; `likedByViewer` is just false for an
+// anonymous viewer.
+export async function GET(req: NextRequest) {
+  const session = requireUser(req);
+  const { searchParams } = new URL(req.url);
+
+  const targetTypeParam = searchParams.get("targetType") ?? "feed";
+  if (!VALID_TARGET_TYPES.includes(targetTypeParam as TargetType)) {
+    return NextResponse.json({ error: "Invalid targetType." }, { status: 400 });
+  }
+  const targetType = targetTypeParam as TargetType;
+
+  const targetIdParam = searchParams.get("targetId");
+  const targetId = targetIdParam ? Number(targetIdParam) : null;
+  if (targetIdParam && (!Number.isInteger(targetId) || targetId! <= 0)) {
+    return NextResponse.json({ error: "Invalid targetId." }, { status: 400 });
+  }
+
+  const posts = listPosts(session?.sub ?? null, targetType, targetId);
+  return NextResponse.json({
+    posts: posts.map((p) => ({
+      id: p.id,
+      authorId: p.author_id,
+      authorUsername: p.author_username,
+      authorName:
+        [p.author_first_name, p.author_last_name].filter(Boolean).join(" ") ||
+        p.author_username,
+      authorProfilePhotoPath: p.author_profile_photo_path,
+      body: p.body,
+      targetType: p.target_type,
+      targetId: p.target_id,
+      createdAt: p.created_at,
+      likeCount: p.like_count,
+      commentCount: p.comment_count,
+      likedByViewer: Boolean(p.liked_by_viewer),
+    })),
+  });
+}
+
+// POST /api/posts — create a post. Requires login (no anonymous
+// posting); body is the only required field. targetType/targetId default
+// to the general newsfeed.
+export async function POST(req: NextRequest) {
+  const session = requireUser(req);
+  if (!session) return NextResponse.json({ error: "Not logged in." }, { status: 401 });
+
+  let body: unknown;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
+
+  const { body: text, targetType, targetId } = (body ?? {}) as Record<string, unknown>;
+
+  if (typeof text !== "string" || text.trim().length === 0) {
+    return NextResponse.json({ error: "Post text is required." }, { status: 400 });
+  }
+  if (text.length > MAX_POST_LENGTH) {
+    return NextResponse.json(
+      { error: `Post text must be ${MAX_POST_LENGTH} characters or fewer.` },
+      { status: 400 }
+    );
+  }
+
+  let resolvedTargetType: TargetType = "feed";
+  if (targetType !== undefined) {
+    if (typeof targetType !== "string" || !VALID_TARGET_TYPES.includes(targetType as TargetType)) {
+      return NextResponse.json({ error: "Invalid targetType." }, { status: 400 });
+    }
+    resolvedTargetType = targetType as TargetType;
+  }
+
+  let resolvedTargetId: number | null = null;
+  if (targetId !== undefined && targetId !== null) {
+    if (typeof targetId !== "number" || !Number.isInteger(targetId) || targetId <= 0) {
+      return NextResponse.json({ error: "Invalid targetId." }, { status: 400 });
+    }
+    resolvedTargetId = targetId;
+  }
+
+  const post = createPost(session.sub, text.trim(), resolvedTargetType, resolvedTargetId);
+  return NextResponse.json(
+    {
+      post: {
+        id: post.id,
+        authorId: post.author_id,
+        authorUsername: post.author_username,
+        authorName:
+          [post.author_first_name, post.author_last_name].filter(Boolean).join(" ") ||
+          post.author_username,
+        authorProfilePhotoPath: post.author_profile_photo_path,
+        body: post.body,
+        targetType: post.target_type,
+        targetId: post.target_id,
+        createdAt: post.created_at,
+        likeCount: post.like_count,
+        commentCount: post.comment_count,
+        likedByViewer: Boolean(post.liked_by_viewer),
+      },
+    },
+    { status: 201 }
+  );
+}

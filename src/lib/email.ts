@@ -42,6 +42,12 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import {
+  listPendingQueuedEmails,
+  markQueuedEmailSent,
+  markQueuedEmailFailed,
+  type QueuedEmail,
+} from "./db";
 
 const FROM_NAME = "Pueblo Connect";
 // Must be an address on a domain the sender has verified with the email
@@ -55,21 +61,27 @@ export type EmailKind =
   | "welcome_verify"
   | "email_verified"
   | "password_reset"
-  | "password_changed";
+  | "password_changed"
+  | "friend_request"
+  | "friend_accepted"
+  | "new_message";
 
-// Future notification kinds this system is architected to grow into (not
-// implemented yet — none of the underlying features exist on the site):
-// friend_request, friend_accepted, new_message, new_comment, new_reply,
-// mention, event_invite, event_reminder, business_inquiry, pueblo_deal,
+// Still future, not implemented yet: new_comment, new_reply, mention,
+// event_invite, event_reminder, business_inquiry, pueblo_deal,
 // pueblo_live, daily_pueblo_update. Adding one of those later means:
-//   1. Add the kind to EmailKind above.
+//   1. Add the kind to EmailKind above (and to QueuedEmailKind in db.ts
+//      if it should go through the queue rather than send inline).
 //   2. Add a template function below, same shape as the ones here.
 //   3. If it's optional/marketing rather than security, check the
 //      member's notification preference (see db.ts
-//      updateUserNotificationPreferences) before calling sendTransactionalEmail.
-// Security/account mail (the four kinds implemented now) is never gated
-// by a preference — members can't opt out of knowing their password
-// changed.
+//      updateUserNotificationPreferences) before calling sendTransactionalEmail
+//      or enqueueEmail.
+// Security/account mail (welcome_verify, email_verified, password_reset,
+// password_changed) is never gated by a preference — members can't opt
+// out of knowing their password changed. The three social kinds below ARE
+// routed through the queue (see enqueueEmail/processEmailQueue at the
+// bottom of this file) since nothing about them is time-critical enough
+// to make an HTTP request wait on mail delivery.
 
 type EmailMessage = { to: string; subject: string; html: string; text: string };
 
@@ -180,6 +192,60 @@ export function buildPasswordChangedEmail(to: string): EmailMessage {
   };
 }
 
+function friendRequestTemplate(fromName: string, requestsUrl: string): string {
+  return wrapHtml(`
+    <p style="font-size:18px;font-weight:bold;margin-top:0;">New friend request</p>
+    <p><strong>${fromName}</strong> sent you a friend request on Pueblo Connect.</p>
+    ${button(requestsUrl, "VIEW FRIEND REQUESTS")}
+  `);
+}
+
+function friendAcceptedTemplate(fromName: string, friendsUrl: string): string {
+  return wrapHtml(`
+    <p style="font-size:18px;font-weight:bold;margin-top:0;">Friend request accepted</p>
+    <p><strong>${fromName}</strong> accepted your friend request.</p>
+    ${button(friendsUrl, "VIEW FRIENDS")}
+  `);
+}
+
+function newMessageTemplate(fromName: string, messagesUrl: string): string {
+  return wrapHtml(`
+    <p style="font-size:18px;font-weight:bold;margin-top:0;">New message</p>
+    <p>You have a new message from <strong>${fromName}</strong>.</p>
+    ${button(messagesUrl, "VIEW MESSAGE")}
+  `);
+}
+
+export function buildFriendRequestEmail(to: string, fromName: string): EmailMessage {
+  const requestsUrl = `${APP_URL}/friends`;
+  return {
+    to,
+    subject: `${fromName} sent you a friend request`,
+    html: friendRequestTemplate(fromName, requestsUrl),
+    text: `${fromName} sent you a friend request on Pueblo Connect.\n\nView it: ${requestsUrl}`,
+  };
+}
+
+export function buildFriendAcceptedEmail(to: string, fromName: string): EmailMessage {
+  const friendsUrl = `${APP_URL}/friends`;
+  return {
+    to,
+    subject: `${fromName} accepted your friend request`,
+    html: friendAcceptedTemplate(fromName, friendsUrl),
+    text: `${fromName} accepted your friend request on Pueblo Connect.\n\nView your friends: ${friendsUrl}`,
+  };
+}
+
+export function buildNewMessageEmail(to: string, fromName: string): EmailMessage {
+  const messagesUrl = `${APP_URL}/messages`;
+  return {
+    to,
+    subject: `New message from ${fromName}`,
+    html: newMessageTemplate(fromName, messagesUrl),
+    text: `You have a new message from ${fromName} on Pueblo Connect.\n\nView it: ${messagesUrl}`,
+  };
+}
+
 async function sendViaResend(msg: EmailMessage): Promise<{ ok: boolean; error?: string }> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) return { ok: false, error: "RESEND_API_KEY not configured" };
@@ -244,4 +310,56 @@ export async function sendTransactionalEmail(
   }
   const { outboxPath } = sendViaDevOutbox(msg, kind);
   return { delivered: true, mode: "dev-outbox", outboxPath };
+}
+
+// ---------------------------------------------------------------------
+// Email queue — re-exported here (rather than only in db.ts) because
+// enqueueEmail is this module's public API for "send this later"; db.ts
+// stays the only file that touches SQLite directly.
+export { enqueueEmail } from "./db";
+
+function templateForQueuedEmail(email: QueuedEmail): EmailMessage {
+  const payload = JSON.parse(email.payload_json) as Record<string, string>;
+  switch (email.kind) {
+    case "friend_request":
+      return buildFriendRequestEmail(email.to_address, payload.fromName);
+    case "friend_accepted":
+      return buildFriendAcceptedEmail(email.to_address, payload.fromName);
+    case "new_message":
+      return buildNewMessageEmail(email.to_address, payload.fromName);
+    default:
+      // Exhaustiveness guard — a new QueuedEmailKind added to db.ts
+      // without a case here is a bug, not a silently-dropped email.
+      throw new Error(`No email template wired up for queued kind "${email.kind}".`);
+  }
+}
+
+// The queue "worker". Call it fire-and-forget right after enqueueEmail so
+// the HTTP response isn't held up by mail delivery (see the call sites in
+// src/app/api/friends/* and src/app/api/messages/*), or call it from a
+// scheduled task/cron in a real deployment — same function either way.
+// Processes up to `limit` pending rows per call and never throws: a
+// failure on one email is recorded on that row (status='failed',
+// last_error) and processing continues with the rest.
+export async function processEmailQueue(limit = 20): Promise<{ sent: number; failed: number }> {
+  const pending = listPendingQueuedEmails(limit);
+  let sent = 0;
+  let failed = 0;
+  for (const email of pending) {
+    try {
+      const msg = templateForQueuedEmail(email);
+      const result = await sendTransactionalEmail(email.kind, msg);
+      if (result.delivered) {
+        markQueuedEmailSent(email.id);
+        sent += 1;
+      } else {
+        markQueuedEmailFailed(email.id, result.error);
+        failed += 1;
+      }
+    } catch (err) {
+      markQueuedEmailFailed(email.id, err instanceof Error ? err.message : String(err));
+      failed += 1;
+    }
+  }
+  return { sent, failed };
 }

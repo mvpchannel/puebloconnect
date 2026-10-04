@@ -1,22 +1,59 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
-/**
- * STATUS: needs backend/API. Typing works; "Post" does not actually publish
- * anywhere yet — there is no posts API or database. See
- * /FUNCTIONALITY_STATUS.md. The file-attachment icons are decorative only
- * (no upload endpoint exists).
- */
-export default function PostComposer() {
+type PostComposerProps = {
+  isLoggedIn: boolean;
+  // Defaults to the general newsfeed. A group page passes
+  // targetType="group" + its own id to post to that group's wall instead
+  // — same posts table, same API route, just a different target.
+  targetType?: "feed" | "group" | "business" | "event";
+  targetId?: number | null;
+};
+
+// Real backend: POST /api/posts (src/app/api/posts/route.ts), backed by
+// the posts table in src/lib/db.ts. File attachment icons are still
+// decorative — no upload endpoint exists yet for post photos/video.
+export default function PostComposer({
+  isLoggedIn,
+  targetType = "feed",
+  targetId = null,
+}: PostComposerProps) {
+  const router = useRouter();
   const [text, setText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    // Needs backend/API — nothing to post to yet.
-    alert(
-      "Posting isn't wired up to a backend yet. See FUNCTIONALITY_STATUS.md."
-    );
+    if (!isLoggedIn) {
+      setError("Log in to post to the newsfeed.");
+      return;
+    }
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/posts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: trimmed, targetType, targetId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Couldn't post that — try again.");
+        return;
+      }
+      setText("");
+      router.refresh();
+    } catch {
+      setError("Couldn't reach the server — check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -29,10 +66,14 @@ export default function PostComposer() {
           <form method="post" onSubmit={handleSubmit}>
             <textarea
               rows={2}
-              placeholder="Write something"
+              placeholder={isLoggedIn ? "Write something" : "Log in to post"}
               value={text}
               onChange={(e) => setText(e.target.value)}
+              disabled={submitting}
             />
+            {error && (
+              <div style={{ color: "#c0392b", fontSize: "13px", margin: "4px 0" }}>{error}</div>
+            )}
             <div className="attachments">
               <ul>
                 <li>
@@ -48,7 +89,9 @@ export default function PostComposer() {
                   </label>
                 </li>
                 <li>
-                  <button type="submit">Post</button>
+                  <button type="submit" disabled={submitting || !text.trim()}>
+                    {submitting ? "Posting…" : "Post"}
+                  </button>
                 </li>
               </ul>
             </div>
