@@ -50,6 +50,10 @@ export default function Sidebar() {
             <i className="ti-tag" />
             <Link href="/deals" title="">Pueblo Deals</Link>
           </li>
+          <li>
+            <i className="ti-crown" />
+            <Link href="/best-of" title="">Best of the Pueblo</Link>
+          </li>
         </ul>
       </div>
     </aside>

@@ -662,6 +662,60 @@ function getDb(): DatabaseSync {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_deal_claims_deal ON deal_claims(deal_id)`);
 
+    // Best of the Pueblo — categories (Best Tacos, Best Coffee, ...),
+    // voting periods (admin-run, e.g. "October 2026"), one vote per
+    // member per category per period (changeable until the period
+    // closes), and winners snapshotted when an admin closes a period —
+    // so a later period's votes never retroactively change a past
+    // period's recorded winner.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bop_categories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        slug TEXT UNIQUE NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bop_voting_periods (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        label TEXT NOT NULL,
+        starts_at TEXT NOT NULL DEFAULT (datetime('now')),
+        ends_at TEXT,
+        closed_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bop_votes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        period_id INTEGER NOT NULL REFERENCES bop_voting_periods(id),
+        category_id INTEGER NOT NULL REFERENCES bop_categories(id),
+        voter_id INTEGER NOT NULL REFERENCES users(id),
+        business_id INTEGER NOT NULL REFERENCES businesses(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(period_id, category_id, voter_id)
+      )
+    `);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_bop_votes_tally ON bop_votes(period_id, category_id, business_id)`
+    );
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS bop_winners (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        period_id INTEGER NOT NULL REFERENCES bop_voting_periods(id),
+        category_id INTEGER NOT NULL REFERENCES bop_categories(id),
+        business_id INTEGER NOT NULL REFERENCES businesses(id),
+        vote_count INTEGER NOT NULL,
+        decided_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(period_id, category_id)
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_bop_winners_business ON bop_winners(business_id)`);
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -3194,4 +3248,255 @@ export function listDealClaims(dealId: number, limit = 200): DealClaimWithUser[]
        LIMIT ?`
     )
     .all(dealId, limit) as DealClaimWithUser[];
+}
+
+// ---------------------------------------------------------------------
+// Best of the Pueblo. Admin-managed categories + voting periods; one
+// vote per member per category per period (changeable while the period
+// is open); winners snapshotted into bop_winners when an admin closes
+// the period, so they're frozen in time rather than recomputed live.
+
+export type BopCategory = {
+  id: number;
+  name: string;
+  slug: string;
+  created_at: string;
+};
+
+function bopCategorySlugify(name: string): string {
+  const base = name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base.length > 0 ? base : "category";
+}
+
+export function createBopCategory(name: string): BopCategory {
+  const db = getDb();
+  const base = bopCategorySlugify(name);
+  let slug = base;
+  let n = 2;
+  while (db.prepare("SELECT id FROM bop_categories WHERE slug = ?").get(slug)) {
+    slug = `${base}-${n}`;
+    n += 1;
+  }
+  const info = db
+    .prepare("INSERT INTO bop_categories (name, slug) VALUES (?, ?)")
+    .run(name, slug);
+  return db.prepare("SELECT * FROM bop_categories WHERE id = ?").get(Number(info.lastInsertRowid)) as BopCategory;
+}
+
+export function listBopCategories(): BopCategory[] {
+  const db = getDb();
+  return db.prepare("SELECT * FROM bop_categories ORDER BY name ASC").all() as BopCategory[];
+}
+
+export function getBopCategoryById(id: number): BopCategory | undefined {
+  const db = getDb();
+  return db.prepare("SELECT * FROM bop_categories WHERE id = ?").get(id) as BopCategory | undefined;
+}
+
+export type BopVotingPeriod = {
+  id: number;
+  label: string;
+  starts_at: string;
+  ends_at: string | null;
+  closed_at: string | null;
+  created_at: string;
+};
+
+export type BopVotingPeriodWithMeta = BopVotingPeriod & { is_open: number };
+
+const BOP_PERIOD_SELECT = `
+  SELECT
+    p.id, p.label, p.starts_at, p.ends_at, p.closed_at, p.created_at,
+    (CASE
+       WHEN p.closed_at IS NOT NULL THEN 0
+       WHEN p.starts_at > datetime('now') THEN 0
+       WHEN p.ends_at IS NOT NULL AND p.ends_at <= datetime('now') THEN 0
+       ELSE 1
+     END) AS is_open
+  FROM bop_voting_periods p
+`;
+
+export function createBopVotingPeriod(
+  label: string,
+  startsAt: string | null,
+  endsAt: string | null
+): BopVotingPeriodWithMeta {
+  const db = getDb();
+  const info = startsAt
+    ? db
+        .prepare("INSERT INTO bop_voting_periods (label, starts_at, ends_at) VALUES (?, ?, ?)")
+        .run(label, startsAt, endsAt)
+    : db
+        .prepare("INSERT INTO bop_voting_periods (label, ends_at) VALUES (?, ?)")
+        .run(label, endsAt);
+  return getBopVotingPeriodById(Number(info.lastInsertRowid))!;
+}
+
+export function getBopVotingPeriodById(id: number): BopVotingPeriodWithMeta | undefined {
+  const db = getDb();
+  return db.prepare(`${BOP_PERIOD_SELECT} WHERE p.id = ?`).get(id) as BopVotingPeriodWithMeta | undefined;
+}
+
+export function listBopVotingPeriods(): BopVotingPeriodWithMeta[] {
+  const db = getDb();
+  return db.prepare(`${BOP_PERIOD_SELECT} ORDER BY p.starts_at DESC`).all() as BopVotingPeriodWithMeta[];
+}
+
+// The most recently-started period that's currently open, if any — the
+// one members vote in by default.
+export function getCurrentBopVotingPeriod(): BopVotingPeriodWithMeta | undefined {
+  const db = getDb();
+  return db
+    .prepare(
+      `${BOP_PERIOD_SELECT}
+       WHERE p.closed_at IS NULL
+         AND p.starts_at <= datetime('now')
+         AND (p.ends_at IS NULL OR p.ends_at > datetime('now'))
+       ORDER BY p.starts_at DESC
+       LIMIT 1`
+    )
+    .get() as BopVotingPeriodWithMeta | undefined;
+}
+
+// Upsert: changing your vote for a category replaces the previous one
+// rather than adding a second — same pattern as rsvpToEvent.
+export function castBopVote(
+  periodId: number,
+  categoryId: number,
+  voterId: number,
+  businessId: number
+): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO bop_votes (period_id, category_id, voter_id, business_id) VALUES (?, ?, ?, ?)
+     ON CONFLICT(period_id, category_id, voter_id) DO UPDATE SET business_id = excluded.business_id`
+  ).run(periodId, categoryId, voterId, businessId);
+}
+
+export function getBopUserVote(
+  periodId: number,
+  categoryId: number,
+  voterId: number
+): number | null {
+  const db = getDb();
+  const row = db
+    .prepare(
+      "SELECT business_id FROM bop_votes WHERE period_id = ? AND category_id = ? AND voter_id = ?"
+    )
+    .get(periodId, categoryId, voterId) as { business_id: number } | undefined;
+  return row?.business_id ?? null;
+}
+
+export type BopTallyRow = {
+  business_id: number;
+  business_name: string;
+  business_slug: string;
+  vote_count: number;
+};
+
+// Live vote tally for a category in a period, highest first — used both
+// for an in-progress period's running count and to compute the winner
+// when a period closes.
+export function getBopCategoryTally(periodId: number, categoryId: number): BopTallyRow[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT b.id AS business_id, b.name AS business_name, b.slug AS business_slug,
+              COUNT(*) AS vote_count
+       FROM bop_votes v
+       JOIN businesses b ON b.id = v.business_id
+       WHERE v.period_id = ? AND v.category_id = ?
+       GROUP BY b.id
+       ORDER BY vote_count DESC, b.name ASC`
+    )
+    .all(periodId, categoryId) as BopTallyRow[];
+}
+
+export type BopWinner = {
+  id: number;
+  period_id: number;
+  category_id: number;
+  business_id: number;
+  vote_count: number;
+  decided_at: string;
+};
+
+export type BopWinnerWithMeta = BopWinner & {
+  period_label: string;
+  category_name: string;
+  category_slug: string;
+  business_name: string;
+  business_slug: string;
+};
+
+const BOP_WINNER_SELECT = `
+  SELECT
+    w.id, w.period_id, w.category_id, w.business_id, w.vote_count, w.decided_at,
+    p.label AS period_label,
+    c.name AS category_name, c.slug AS category_slug,
+    b.name AS business_name, b.slug AS business_slug
+  FROM bop_winners w
+  JOIN bop_voting_periods p ON p.id = w.period_id
+  JOIN bop_categories c ON c.id = w.category_id
+  JOIN businesses b ON b.id = w.business_id
+`;
+
+// Closes a voting period: for every category that received at least one
+// vote in this period, snapshots the top business as that category's
+// winner (ties broken by business name, same as getBopCategoryTally's
+// own tiebreak), then marks the period closed so it can't be voted in
+// or re-finalized again. Returns the winners just decided.
+export function closeBopVotingPeriod(periodId: number): BopWinnerWithMeta[] {
+  const db = getDb();
+  const period = getBopVotingPeriodById(periodId);
+  if (!period || period.closed_at) return [];
+
+  const categoriesVotedIn = db
+    .prepare("SELECT DISTINCT category_id FROM bop_votes WHERE period_id = ?")
+    .all(periodId) as { category_id: number }[];
+
+  for (const { category_id } of categoriesVotedIn) {
+    const tally = getBopCategoryTally(periodId, category_id);
+    if (tally.length === 0) continue;
+    const winner = tally[0];
+    db.prepare(
+      `INSERT INTO bop_winners (period_id, category_id, business_id, vote_count)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(period_id, category_id) DO UPDATE SET
+         business_id = excluded.business_id, vote_count = excluded.vote_count`
+    ).run(periodId, category_id, winner.business_id, winner.vote_count);
+  }
+
+  db.prepare("UPDATE bop_voting_periods SET closed_at = datetime('now') WHERE id = ?").run(periodId);
+
+  return db
+    .prepare(`${BOP_WINNER_SELECT} WHERE w.period_id = ? ORDER BY c.name ASC`)
+    .all(periodId) as BopWinnerWithMeta[];
+}
+
+export function listBopWinnersForPeriod(periodId: number): BopWinnerWithMeta[] {
+  const db = getDb();
+  return db
+    .prepare(`${BOP_WINNER_SELECT} WHERE w.period_id = ? ORDER BY c.name ASC`)
+    .all(periodId) as BopWinnerWithMeta[];
+}
+
+// Every category a business has ever won, most recent first — for a
+// "Best of the Pueblo" badge list on that business's channel page.
+export function listBopWinsForBusiness(businessId: number): BopWinnerWithMeta[] {
+  const db = getDb();
+  return db
+    .prepare(`${BOP_WINNER_SELECT} WHERE w.business_id = ? ORDER BY w.decided_at DESC`)
+    .all(businessId) as BopWinnerWithMeta[];
+}
+
+export function listAllBopWinners(limit = 100): BopWinnerWithMeta[] {
+  const db = getDb();
+  return db
+    .prepare(`${BOP_WINNER_SELECT} ORDER BY w.decided_at DESC LIMIT ?`)
+    .all(limit) as BopWinnerWithMeta[];
 }

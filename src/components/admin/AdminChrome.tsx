@@ -30,6 +30,7 @@ const MORE_LINKS: { href: string; label: string; icon: string }[] = [
   { href: "/admin/post-preview", label: "post preview page", icon: "fa-glass" },
   { href: "/admin/users", label: "user management", icon: "fa-hdd-o" },
   { href: "/admin/stream-moderation", label: "stream moderation", icon: "fa-flag" },
+  { href: "/admin/best-of", label: "best of the pueblo", icon: "fa-trophy" },
 ];
 
 /**

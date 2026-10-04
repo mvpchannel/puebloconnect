@@ -24,6 +24,7 @@ import {
   listActiveDealsForBusiness,
   listAllDealsForBusiness,
   hasClaimedDeal,
+  listBopWinsForBusiness,
 } from "@/lib/db";
 import { formatRelativeTime } from "@/lib/time";
 
@@ -59,6 +60,7 @@ export default async function BusinessChannelPage({
   const events = listEventsForBusiness(business.id);
   const activeDeals = listActiveDealsForBusiness(business.id);
   const allDeals = isOwner ? listAllDealsForBusiness(business.id) : [];
+  const bopWins = listBopWinsForBusiness(business.id);
 
   const shapedReviews = reviews.map((r) => ({
     id: r.id,
@@ -90,6 +92,27 @@ export default async function BusinessChannelPage({
                         {business.follower_count === 1 ? "" : "s"} · {business.post_count} post
                         {business.post_count === 1 ? "" : "s"}
                       </span>
+                      {bopWins.length > 0 && (
+                        <span style={{ display: "block", marginTop: 4 }}>
+                          {bopWins.map((w) => (
+                            <span
+                              key={w.id}
+                              title={`${w.category_name} — ${w.period_label}`}
+                              style={{
+                                display: "inline-block",
+                                background: "#f5a623",
+                                color: "#fff",
+                                borderRadius: 4,
+                                padding: "2px 8px",
+                                marginRight: 6,
+                                fontSize: 12,
+                              }}
+                            >
+                              🏆 {w.category_name}
+                            </span>
+                          ))}
+                        </span>
+                      )}
                     </li>
                   </ul>
                 </div>
