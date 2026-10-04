@@ -103,3 +103,12 @@ directory, etc.) still needs the backend work described in the original
 audit (Postgres + Node/Next API routes + real auth + S3-compatible storage).
 See `FUNCTIONALITY_STATUS.md` in the Phase 0 static site for the full
 feature-by-feature breakdown — it still applies here.
+
+## Assets added, not yet wired up
+
+- `public/images/defaults/default-avatar-male.jpg` / `default-avatar-female.jpg`
+  — generic placeholder-face images for the future "no profile photo" default
+  once real auth exists. Mirrors the same addition in the Phase 0 static site
+  (see its `FUNCTIONALITY_STATUS.md` for the asset-provenance note). Not
+  referenced by any component yet — there's no real registration flow to
+  assign a default photo to until auth is built.
