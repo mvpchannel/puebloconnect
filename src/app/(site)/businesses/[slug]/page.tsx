@@ -10,6 +10,7 @@ import BusinessFollowButton from "@/components/BusinessFollowButton";
 import BusinessReviewsPanel from "@/components/BusinessReviewsPanel";
 import BusinessOwnerPanel from "@/components/BusinessOwnerPanel";
 import DealClaimButton from "@/components/DealClaimButton";
+import PassportVisitBeacon from "@/components/PassportVisitBeacon";
 import { getCurrentUser } from "@/lib/require-user";
 import {
   getBusinessBySlug,
@@ -75,6 +76,12 @@ export default async function BusinessChannelPage({
   return (
     <>
       <Header />
+      <PassportVisitBeacon
+        isLoggedIn={Boolean(session)}
+        category="business"
+        refId={business.id}
+        label={`Visited ${business.name}`}
+      />
       <section>
         <div className="feature-photo">
           <figure>

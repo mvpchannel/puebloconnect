@@ -774,6 +774,27 @@ function getDb(): DatabaseSync {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_booth_answers_question ON booth_answers(question_id)`);
 
+    // Pueblo Passport. A stamp per member per "thing" they've engaged
+    // with — a specific business, a specific event, a specific stream,
+    // or a one-off milestone category with no specific ref (explore_3d,
+    // daily_pueblo). UNIQUE(user_id, category, ref_id) makes granting a
+    // stamp idempotent: visiting the same business channel twice earns
+    // one stamp, not two. 'daily_pueblo' is reserved for when that
+    // feature exists — nothing grants it yet, same honest-gap pattern
+    // as every undone feature in this app.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS passport_stamps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        category TEXT NOT NULL CHECK (category IN ('business', 'event', 'pueblo_live', 'explore_3d', 'daily_pueblo')),
+        ref_id INTEGER,
+        label TEXT NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (user_id, category, ref_id)
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_passport_stamps_user ON passport_stamps(user_id)`);
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -3853,4 +3874,100 @@ export function listBoothAnswersForQuestion(questionId: number, limit = 100): Bo
   return db
     .prepare(`${BOOTH_ANSWER_SELECT} WHERE a.question_id = ? ORDER BY a.created_at ASC LIMIT ?`)
     .all(questionId, limit) as BoothAnswerWithUser[];
+}
+
+// ---------------------------------------------------------------------
+// Pueblo Passport. Stamps are granted idempotently via a check-then-
+// insert (not relying solely on the UNIQUE index above, since SQLite
+// treats NULL ref_id values as always-distinct — the explicit check
+// here is what actually keeps a null-ref category like 'explore_3d' to
+// one stamp per member).
+
+export type PassportCategory = "business" | "event" | "pueblo_live" | "explore_3d" | "daily_pueblo";
+
+export type PassportStamp = {
+  id: number;
+  user_id: number;
+  category: PassportCategory;
+  ref_id: number | null;
+  label: string;
+  created_at: string;
+};
+
+function findPassportStamp(userId: number, category: PassportCategory, refId: number | null): PassportStamp | undefined {
+  const db = getDb();
+  if (refId === null) {
+    return db
+      .prepare(
+        `SELECT * FROM passport_stamps WHERE user_id = ? AND category = ? AND ref_id IS NULL`
+      )
+      .get(userId, category) as PassportStamp | undefined;
+  }
+  return db
+    .prepare(`SELECT * FROM passport_stamps WHERE user_id = ? AND category = ? AND ref_id = ?`)
+    .get(userId, category, refId) as PassportStamp | undefined;
+}
+
+// Idempotent: granting the same (user, category, ref) stamp twice is a
+// no-op — the first grant stands, including its original label.
+export function grantPassportStamp(
+  userId: number,
+  category: PassportCategory,
+  refId: number | null,
+  label: string
+): PassportStamp {
+  const existing = findPassportStamp(userId, category, refId);
+  if (existing) return existing;
+
+  const db = getDb();
+  const info = db
+    .prepare(`INSERT INTO passport_stamps (user_id, category, ref_id, label) VALUES (?, ?, ?, ?)`)
+    .run(userId, category, refId, label);
+  return findPassportStamp(userId, category, refId) ?? {
+    id: Number(info.lastInsertRowid),
+    user_id: userId,
+    category,
+    ref_id: refId,
+    label,
+    created_at: new Date().toISOString(),
+  };
+}
+
+export function listPassportStampsForUser(userId: number): PassportStamp[] {
+  const db = getDb();
+  return db
+    .prepare(`SELECT * FROM passport_stamps WHERE user_id = ? ORDER BY created_at DESC`)
+    .all(userId) as PassportStamp[];
+}
+
+export function countPassportStampsForUser(userId: number): number {
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT COUNT(*) AS n FROM passport_stamps WHERE user_id = ?`)
+    .get(userId) as { n: number };
+  return row.n;
+}
+
+export type PassportReward = {
+  key: string;
+  label: string;
+  threshold: number;
+  unlocked: boolean;
+};
+
+// Reward tiers, computed from a member's total stamp count — not
+// stored, same reasoning as Street Team's badge thresholds: no
+// migration needed to retune them later.
+const PASSPORT_REWARD_TIERS: { key: string; label: string; threshold: number }[] = [
+  { key: "explorer", label: "Pueblo Explorer", threshold: 3 },
+  { key: "insider", label: "Pueblo Insider", threshold: 8 },
+  { key: "legend", label: "Pueblo Legend", threshold: 15 },
+];
+
+export function getPassportRewardsForUser(userId: number): PassportReward[] {
+  const count = countPassportStampsForUser(userId);
+  return PASSPORT_REWARD_TIERS.map((tier) => ({
+    ...tier,
+    unlocked: count >= tier.threshold,
+  }));
 }

@@ -62,6 +62,10 @@ export default function Sidebar() {
             <i className="ti-microphone-alt" />
             <Link href="/booth" title="">The Pueblo Booth</Link>
           </li>
+          <li>
+            <i className="ti-id-badge" />
+            <Link href="/passport" title="">Pueblo Passport</Link>
+          </li>
         </ul>
       </div>
     </aside>
