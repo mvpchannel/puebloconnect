@@ -21,6 +21,7 @@ import {
   listBusinessesForOwner,
   listAllDealsForBusiness,
   listStreams,
+  listQaQuestions,
 } from "@/lib/db";
 import { toEmbedSrc } from "@/lib/stream-embed";
 
@@ -89,6 +90,18 @@ export default async function StreamDetailPage({
       }
     : null;
 
+  const qaQuestions = listQaQuestions(stream.id, session?.sub ?? null).map((q) => ({
+    id: q.id,
+    authorId: q.author_id,
+    authorName: [q.author_first_name, q.author_last_name].filter(Boolean).join(" ") || q.author_username,
+    authorProfilePhotoPath: q.author_profile_photo_path,
+    body: q.body,
+    status: q.status,
+    createdAt: q.created_at,
+    voteCount: q.vote_count,
+    votedByViewer: Boolean(q.voted_by_viewer),
+  }));
+
   // Deals the host could attach to a milestone or a deal-type flash
   // drop — every active deal across every business they own.
   const hostDeals =
@@ -145,6 +158,7 @@ export default async function StreamDetailPage({
                   initialMilestones={milestones}
                   initialActiveFlashDrop={activeFlashDropShaped}
                   hostDeals={hostDeals}
+                  initialQaQuestions={qaQuestions}
                 />
               </div>
             </div>

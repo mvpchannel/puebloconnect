@@ -932,6 +932,49 @@ function getDb(): DatabaseSync {
       )
     `);
 
+    // Live Q&A queue — viewers submit questions, other viewers upvote
+    // them (one vote per viewer per question, toggleable), and the
+    // host works through them in rough priority order.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_qa_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stream_id INTEGER NOT NULL REFERENCES streams(id),
+        author_id INTEGER NOT NULL REFERENCES users(id),
+        body TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'answered', 'dismissed')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        answered_at TEXT
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_qa_questions_stream ON stream_qa_questions(stream_id, status)`);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_qa_votes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_id INTEGER NOT NULL REFERENCES stream_qa_questions(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (question_id, user_id)
+      )
+    `);
+
+    // Pueblo Booth Spotlight — a viewer asks to be brought on/featured
+    // during the stream; the host works the request queue and marks
+    // who's been spotlighted. Deliberately separate from the
+    // standalone "Pueblo Booth" Q&A-of-the-week feature (booth_questions
+    // /booth_answers) — this is a live, per-stream request, not that.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_spotlight_requests (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stream_id INTEGER NOT NULL REFERENCES streams(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        message TEXT,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'spotlighted', 'dismissed')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        resolved_at TEXT
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_spotlight_requests_stream ON stream_spotlight_requests(stream_id, status)`);
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -4657,6 +4700,173 @@ export function claimStreamFlashDrop(dropId: number, userId: number): { claimed:
   awardPoints(userId, "stream_flash_drop", `flashdrop:${dropId}`, POINT_VALUES.stream_flash_drop);
 
   return { claimed: true };
+}
+
+// ---- Live Q&A queue ---------------------------------------------------------
+
+export type StreamQaQuestion = {
+  id: number;
+  stream_id: number;
+  author_id: number;
+  author_username: string;
+  author_first_name: string | null;
+  author_last_name: string | null;
+  author_profile_photo_path: string | null;
+  body: string;
+  status: "open" | "answered" | "dismissed";
+  created_at: string;
+  answered_at: string | null;
+  vote_count: number;
+  voted_by_viewer: 0 | 1;
+};
+
+const MAX_OPEN_QA_PER_STREAM = 200;
+
+function qaSelect(viewerId: number | null): string {
+  return `
+    SELECT
+      q.id, q.stream_id, q.author_id, q.body, q.status, q.created_at, q.answered_at,
+      u.username AS author_username,
+      u.first_name AS author_first_name,
+      u.last_name AS author_last_name,
+      u.profile_photo_path AS author_profile_photo_path,
+      (SELECT COUNT(*) FROM stream_qa_votes v WHERE v.question_id = q.id) AS vote_count,
+      ${viewerId === null ? "0" : `(SELECT COUNT(*) FROM stream_qa_votes v WHERE v.question_id = q.id AND v.user_id = ${viewerId})`} AS voted_by_viewer
+    FROM stream_qa_questions q
+    JOIN users u ON u.id = q.author_id
+  `;
+}
+
+export function submitQaQuestion(streamId: number, authorId: number, body: string): StreamQaQuestion {
+  const db = getDb();
+  const openCount = db
+    .prepare(`SELECT COUNT(*) AS n FROM stream_qa_questions WHERE stream_id = ? AND status = 'open'`)
+    .get(streamId) as { n: number };
+  if (openCount.n >= MAX_OPEN_QA_PER_STREAM) {
+    throw new Error("The question queue is full right now — try again in a bit.");
+  }
+  const info = db
+    .prepare(`INSERT INTO stream_qa_questions (stream_id, author_id, body) VALUES (?, ?, ?)`)
+    .run(streamId, authorId, body);
+  return db
+    .prepare(`${qaSelect(authorId)} WHERE q.id = ?`)
+    .get(Number(info.lastInsertRowid)) as StreamQaQuestion;
+}
+
+// Open questions first (by votes, then oldest first so ties don't
+// reorder on a refresh), answered/dismissed after, most recent first.
+export function listQaQuestions(streamId: number, viewerId: number | null): StreamQaQuestion[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `${qaSelect(viewerId)}
+       WHERE q.stream_id = ?
+       ORDER BY
+         CASE q.status WHEN 'open' THEN 0 ELSE 1 END,
+         CASE WHEN q.status = 'open' THEN vote_count ELSE 0 END DESC,
+         q.id ASC`
+    )
+    .all(streamId) as StreamQaQuestion[];
+}
+
+export function getQaQuestionById(questionId: number): StreamQaQuestion | undefined {
+  const db = getDb();
+  return db.prepare(`${qaSelect(null)} WHERE q.id = ?`).get(questionId) as StreamQaQuestion | undefined;
+}
+
+// Toggles: voting again removes the vote. Returns the new vote count.
+export function toggleQaVote(questionId: number, userId: number): number {
+  const db = getDb();
+  const existing = db
+    .prepare(`SELECT id FROM stream_qa_votes WHERE question_id = ? AND user_id = ?`)
+    .get(questionId, userId);
+  if (existing) {
+    db.prepare(`DELETE FROM stream_qa_votes WHERE question_id = ? AND user_id = ?`).run(questionId, userId);
+  } else {
+    db.prepare(`INSERT INTO stream_qa_votes (question_id, user_id) VALUES (?, ?)`).run(questionId, userId);
+  }
+  const row = db
+    .prepare(`SELECT COUNT(*) AS n FROM stream_qa_votes WHERE question_id = ?`)
+    .get(questionId) as { n: number };
+  return row.n;
+}
+
+export function resolveQaQuestion(questionId: number, status: "answered" | "dismissed"): boolean {
+  const db = getDb();
+  const info = db
+    .prepare(
+      `UPDATE stream_qa_questions SET status = ?, answered_at = datetime('now') WHERE id = ? AND status = 'open'`
+    )
+    .run(status, questionId);
+  return info.changes > 0;
+}
+
+// ---- Pueblo Booth Spotlight (live, per-stream guest requests) --------------
+
+export type StreamSpotlightRequest = {
+  id: number;
+  stream_id: number;
+  user_id: number;
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+  profile_photo_path: string | null;
+  message: string | null;
+  status: "pending" | "spotlighted" | "dismissed";
+  created_at: string;
+  resolved_at: string | null;
+};
+
+const SPOTLIGHT_SELECT = `
+  SELECT
+    r.id, r.stream_id, r.user_id, r.message, r.status, r.created_at, r.resolved_at,
+    u.username, u.first_name, u.last_name, u.profile_photo_path
+  FROM stream_spotlight_requests r
+  JOIN users u ON u.id = r.user_id
+`;
+
+export function requestSpotlight(
+  streamId: number,
+  userId: number,
+  message: string | null
+): StreamSpotlightRequest {
+  const db = getDb();
+  const existing = db
+    .prepare(
+      `SELECT id FROM stream_spotlight_requests WHERE stream_id = ? AND user_id = ? AND status = 'pending'`
+    )
+    .get(streamId, userId);
+  if (existing) {
+    return db.prepare(`${SPOTLIGHT_SELECT} WHERE r.id = ?`).get((existing as { id: number }).id) as StreamSpotlightRequest;
+  }
+  const info = db
+    .prepare(`INSERT INTO stream_spotlight_requests (stream_id, user_id, message) VALUES (?, ?, ?)`)
+    .run(streamId, userId, message);
+  return db
+    .prepare(`${SPOTLIGHT_SELECT} WHERE r.id = ?`)
+    .get(Number(info.lastInsertRowid)) as StreamSpotlightRequest;
+}
+
+export function listSpotlightRequests(streamId: number, status?: "pending" | "spotlighted" | "dismissed"): StreamSpotlightRequest[] {
+  const db = getDb();
+  if (status) {
+    return db
+      .prepare(`${SPOTLIGHT_SELECT} WHERE r.stream_id = ? AND r.status = ? ORDER BY r.id ASC`)
+      .all(streamId, status) as StreamSpotlightRequest[];
+  }
+  return db
+    .prepare(`${SPOTLIGHT_SELECT} WHERE r.stream_id = ? ORDER BY CASE r.status WHEN 'pending' THEN 0 ELSE 1 END, r.id ASC`)
+    .all(streamId) as StreamSpotlightRequest[];
+}
+
+export function resolveSpotlightRequest(requestId: number, status: "spotlighted" | "dismissed"): boolean {
+  const db = getDb();
+  const info = db
+    .prepare(
+      `UPDATE stream_spotlight_requests SET status = ?, resolved_at = datetime('now') WHERE id = ? AND status = 'pending'`
+    )
+    .run(status, requestId);
+  return info.changes > 0;
 }
 
 // ---- Chat badges -----------------------------------------------------------

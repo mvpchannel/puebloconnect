@@ -67,6 +67,28 @@ type ActiveFlashDrop = {
 
 type HostDeal = { id: number; title: string; businessName: string };
 
+type QaQuestion = {
+  id: number;
+  authorId: number;
+  authorName: string;
+  authorProfilePhotoPath: string | null;
+  body: string;
+  status: "open" | "answered" | "dismissed";
+  createdAt: string;
+  voteCount: number;
+  votedByViewer: boolean;
+};
+
+type SpotlightRequest = {
+  id: number;
+  userId: number;
+  userName: string;
+  userProfilePhotoPath: string | null;
+  message: string | null;
+  status: "pending" | "spotlighted" | "dismissed";
+  createdAt: string;
+};
+
 type WatchProgress = {
   elapsedSeconds: number;
   thresholdSeconds: number;
@@ -89,6 +111,7 @@ type StreamWatchClientProps = {
   initialMilestones: Milestone[];
   initialActiveFlashDrop: ActiveFlashDrop;
   hostDeals: HostDeal[];
+  initialQaQuestions: QaQuestion[];
 };
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -96,6 +119,8 @@ const REACTIONS_POLL_MS = 2_000;
 const PINNED_POLL_MS = 5_000;
 const FLASH_DROP_POLL_MS = 5_000;
 const MILESTONES_POLL_MS = 15_000;
+const QA_POLL_MS = 8_000;
+const SPOTLIGHT_POLL_MS = 8_000;
 
 // Real backend: src/app/api/streams/[id]/* — likes, comments/chat,
 // viewer presence (join/heartbeat/leave), host start/end controls, a
@@ -122,6 +147,7 @@ export default function StreamWatchClient({
   initialMilestones,
   initialActiveFlashDrop,
   hostDeals,
+  initialQaQuestions,
 }: StreamWatchClientProps) {
   const router = useRouter();
   const canModerate = isHost || isAdmin;
@@ -143,6 +169,15 @@ export default function StreamWatchClient({
   const [milestones, setMilestones] = useState<Milestone[]>(initialMilestones);
   const [activeDrop, setActiveDrop] = useState<ActiveFlashDrop>(initialActiveFlashDrop);
   const [dropClaiming, setDropClaiming] = useState(false);
+
+  const [qaQuestions, setQaQuestions] = useState<QaQuestion[]>(initialQaQuestions);
+  const [qaDraft, setQaDraft] = useState("");
+  const [qaError, setQaError] = useState<string | null>(null);
+  const [showQa, setShowQa] = useState(false);
+
+  const [spotlightRequested, setSpotlightRequested] = useState(false);
+  const [spotlightRequests, setSpotlightRequests] = useState<SpotlightRequest[]>([]);
+  const [showSpotlightQueue, setShowSpotlightQueue] = useState(false);
 
   const [showHostTools, setShowHostTools] = useState(false);
   const [announcementDraft, setAnnouncementDraft] = useState("");
@@ -316,6 +351,133 @@ export default function StreamWatchClient({
       clearInterval(interval);
     };
   }, [streamId, status]);
+
+  // Q&A queue — polled while live so vote tallies and new questions
+  // show up without a refresh.
+  useEffect(() => {
+    if (status !== "live") return;
+    let cancelled = false;
+    const interval = setInterval(() => {
+      fetch(`/api/streams/${streamId}/qa`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (!cancelled && Array.isArray(data.questions)) setQaQuestions(data.questions);
+        })
+        .catch(() => {});
+    }, QA_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [streamId, status]);
+
+  // Spotlight request queue — host/admin only, polled while the queue
+  // panel is open.
+  useEffect(() => {
+    if (!canModerate || !showSpotlightQueue || status !== "live") return;
+    let cancelled = false;
+    function load() {
+      fetch(`/api/streams/${streamId}/spotlight`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (!cancelled && Array.isArray(data.requests)) setSpotlightRequests(data.requests);
+        })
+        .catch(() => {});
+    }
+    load();
+    const interval = setInterval(load, SPOTLIGHT_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [streamId, status, canModerate, showSpotlightQueue]);
+
+  async function submitQaQuestion(e: FormEvent) {
+    e.preventDefault();
+    if (!isLoggedIn) {
+      setQaError("Log in to ask a question.");
+      return;
+    }
+    const trimmed = qaDraft.trim();
+    if (!trimmed) return;
+    setQaError(null);
+    try {
+      const res = await fetch(`/api/streams/${streamId}/qa`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: trimmed }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setQaError(data.error || "Couldn't submit that.");
+        return;
+      }
+      setQaQuestions((prev) => [...prev, data.question]);
+      setQaDraft("");
+    } catch {
+      setQaError("Couldn't reach the server.");
+    }
+  }
+
+  async function voteOnQuestion(questionId: number) {
+    if (!isLoggedIn) {
+      setQaError("Log in to vote.");
+      return;
+    }
+    // Optimistic toggle, then reconcile with the server's count.
+    setQaQuestions((prev) =>
+      prev.map((q) =>
+        q.id === questionId
+          ? { ...q, votedByViewer: !q.votedByViewer, voteCount: q.voteCount + (q.votedByViewer ? -1 : 1) }
+          : q
+      )
+    );
+    try {
+      const res = await fetch(`/api/streams/${streamId}/qa/${questionId}/vote`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok && typeof data.voteCount === "number") {
+        setQaQuestions((prev) => prev.map((q) => (q.id === questionId ? { ...q, voteCount: data.voteCount } : q)));
+      }
+    } catch {
+      /* optimistic update already reflected the tap */
+    }
+  }
+
+  async function resolveQuestion(questionId: number, status2: "answered" | "dismissed") {
+    await fetch(`/api/streams/${streamId}/qa/${questionId}/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: status2 }),
+    }).catch(() => {});
+    setQaQuestions((prev) => prev.map((q) => (q.id === questionId ? { ...q, status: status2 } : q)));
+  }
+
+  async function requestSpotlight() {
+    if (!isLoggedIn) {
+      setError("Log in to request the spotlight.");
+      return;
+    }
+    const message = window.prompt("Want to say anything to the host? (optional)") ?? "";
+    try {
+      const res = await fetch(`/api/streams/${streamId}/spotlight`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: message.trim() || null }),
+      });
+      if (res.ok) setSpotlightRequested(true);
+    } catch {
+      /* best-effort */
+    }
+  }
+
+  async function resolveSpotlight(requestId: number, status2: "spotlighted" | "dismissed") {
+    await fetch(`/api/streams/${streamId}/spotlight/${requestId}/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: status2 }),
+    }).catch(() => {});
+    setSpotlightRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: status2 } : r)));
+  }
 
   async function toggleLike() {
     if (!isLoggedIn) {
@@ -801,6 +963,28 @@ export default function StreamWatchClient({
                 <span>End Stream</span>
               </button>
             )}
+            {status === "live" && (
+              <button className="mtr-btn signin" type="button" onClick={() => setShowQa((v) => !v)}>
+                <span>
+                  <i className="fa fa-question-circle" style={{ marginRight: 6 }} />
+                  Q&amp;A
+                </span>
+              </button>
+            )}
+            {status === "live" && !isHost && (
+              <button
+                className="mtr-btn signin"
+                type="button"
+                disabled={spotlightRequested}
+                onClick={requestSpotlight}
+                title="Ask the host to feature you during the stream"
+              >
+                <span>
+                  <i className="fa fa-star" style={{ marginRight: 6 }} />
+                  {spotlightRequested ? "Requested ✓" : "Request Spotlight"}
+                </span>
+              </button>
+            )}
             {canModerate && status === "live" && (
               <button className="mtr-btn signin" type="button" onClick={() => setShowHostTools((v) => !v)}>
                 <span>Host Tools</span>
@@ -1084,6 +1268,63 @@ export default function StreamWatchClient({
                   </button>
                 </form>
               </div>
+
+              <div className="col-md-6" style={{ marginBottom: 16 }}>
+                <h5 style={{ marginBottom: 6 }}>
+                  Spotlight requests
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-default"
+                    style={{ marginLeft: 10 }}
+                    onClick={() => setShowSpotlightQueue((v) => !v)}
+                  >
+                    {showSpotlightQueue ? "Hide" : "Show"}
+                  </button>
+                </h5>
+                {showSpotlightQueue && (
+                  <div>
+                    {spotlightRequests.filter((r) => r.status === "pending").length === 0 && (
+                      <p style={{ color: "#888", fontSize: 13 }}>No pending requests.</p>
+                    )}
+                    {spotlightRequests
+                      .filter((r) => r.status === "pending")
+                      .map((r) => (
+                        <div
+                          key={r.id}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: 8,
+                            padding: "6px 0",
+                            borderBottom: "1px solid #f0f0f0",
+                          }}
+                        >
+                          <div style={{ fontSize: 13 }}>
+                            <strong>{r.userName}</strong>
+                            {r.message && <div style={{ color: "#888" }}>{r.message}</div>}
+                          </div>
+                          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-primary"
+                              onClick={() => resolveSpotlight(r.id, "spotlighted")}
+                            >
+                              Spotlight
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-default"
+                              onClick={() => resolveSpotlight(r.id, "dismissed")}
+                            >
+                              Dismiss
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1168,6 +1409,101 @@ export default function StreamWatchClient({
                 })}
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {status === "live" && showQa && (
+        <div className="central-meta item">
+          <div style={{ padding: 20 }}>
+            <h4 style={{ marginBottom: 12 }}>
+              <i className="fa fa-question-circle" style={{ marginRight: 8, color: "#1877d1" }} />
+              Live Q&amp;A
+            </h4>
+            {qaError && <p role="alert" style={{ color: "#c0392b", marginBottom: 10 }}>{qaError}</p>}
+            {qaQuestions.length === 0 && <p style={{ color: "#888" }}>No questions yet — ask the first one!</p>}
+            {qaQuestions.map((q) => (
+              <div
+                key={q.id}
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  padding: "10px 0",
+                  borderBottom: "1px solid #f0f0f0",
+                  opacity: q.status === "dismissed" ? 0.5 : 1,
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => voteOnQuestion(q.id)}
+                  disabled={q.status !== "open"}
+                  title="Upvote this question"
+                  style={{
+                    flexShrink: 0,
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    width: 42,
+                    padding: "4px 0",
+                    borderRadius: 6,
+                    border: "1px solid " + (q.votedByViewer ? "#1877d1" : "#eee"),
+                    background: q.votedByViewer ? "#eef6ff" : "#fff",
+                    color: q.votedByViewer ? "#1877d1" : "#888",
+                    cursor: q.status === "open" ? "pointer" : "default",
+                  }}
+                >
+                  <i className="fa fa-caret-up" />
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>{q.voteCount}</span>
+                </button>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13.5 }}>
+                    <strong>{q.authorName}</strong>
+                    {q.status === "answered" && (
+                      <span style={{ color: "#2a8f2a", fontSize: 11, marginLeft: 8 }}>
+                        <i className="fa fa-check-circle" /> answered
+                      </span>
+                    )}
+                    {q.status === "dismissed" && (
+                      <span style={{ color: "#999", fontSize: 11, marginLeft: 8 }}>dismissed</span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 13.5, color: "#333" }}>{q.body}</div>
+                </div>
+                {canModerate && q.status === "open" && (
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      onClick={() => resolveQuestion(q.id, "answered")}
+                      className="btn btn-sm btn-default"
+                    >
+                      Answered
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => resolveQuestion(q.id, "dismissed")}
+                      className="btn btn-sm btn-default"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+            <form onSubmit={submitQaQuestion} style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <input
+                type="text"
+                value={qaDraft}
+                onChange={(e) => setQaDraft(e.target.value)}
+                placeholder={isLoggedIn ? "Ask the host a question…" : "Log in to ask a question"}
+                disabled={!isLoggedIn}
+                maxLength={300}
+                style={{ flex: 1, padding: "8px 12px", border: "1px solid #ddd", borderRadius: 20 }}
+              />
+              <button className="mtr-btn signup" type="submit" disabled={!isLoggedIn || !qaDraft.trim()}>
+                <span>Ask</span>
+              </button>
+            </form>
           </div>
         </div>
       )}
