@@ -716,6 +716,34 @@ function getDb(): DatabaseSync {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_bop_winners_business ON bop_winners(business_id)`);
 
+    // Pueblo Street Team. A member submits a photo/video (as a link —
+    // this app has no file upload pipeline, same honest limitation as
+    // every other cover-photo field in this schema) with a caption; an
+    // admin approves or rejects it before it's shown publicly. Approved
+    // submissions feed a member's contributor badges (computed from
+    // counts, not stored — see contributorBadgesForUser below).
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS street_team_submissions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        submitter_id INTEGER NOT NULL REFERENCES users(id),
+        media_type TEXT NOT NULL CHECK (media_type IN ('photo', 'video')),
+        media_url TEXT NOT NULL,
+        caption TEXT,
+        location_text TEXT,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+        reviewed_by INTEGER REFERENCES users(id),
+        reviewed_at TEXT,
+        review_note TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_street_team_status ON street_team_submissions(status, created_at)`
+    );
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_street_team_submitter ON street_team_submissions(submitter_id)`
+    );
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -3499,4 +3527,148 @@ export function listAllBopWinners(limit = 100): BopWinnerWithMeta[] {
   return db
     .prepare(`${BOP_WINNER_SELECT} ORDER BY w.decided_at DESC LIMIT ?`)
     .all(limit) as BopWinnerWithMeta[];
+}
+
+// ---------------------------------------------------------------------
+// Pueblo Street Team. Member-submitted photos/videos go into a pending
+// queue; an admin approves or rejects each one before it's shown
+// publicly (never auto-published — see createStreetTeamSubmission).
+// Contributor badges are computed from a member's approved-submission
+// counts, not stored, so the thresholds can change without a migration.
+
+export type StreetTeamMediaType = "photo" | "video";
+export type StreetTeamStatus = "pending" | "approved" | "rejected";
+
+export type StreetTeamSubmission = {
+  id: number;
+  submitter_id: number;
+  media_type: StreetTeamMediaType;
+  media_url: string;
+  caption: string | null;
+  location_text: string | null;
+  status: StreetTeamStatus;
+  reviewed_by: number | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+};
+
+export type StreetTeamSubmissionWithUser = StreetTeamSubmission & {
+  submitter_username: string;
+  submitter_first_name: string | null;
+  submitter_last_name: string | null;
+};
+
+const STREET_TEAM_SELECT = `
+  SELECT
+    s.id, s.submitter_id, s.media_type, s.media_url, s.caption, s.location_text,
+    s.status, s.reviewed_by, s.reviewed_at, s.review_note, s.created_at,
+    u.username AS submitter_username, u.first_name AS submitter_first_name,
+    u.last_name AS submitter_last_name
+  FROM street_team_submissions s
+  JOIN users u ON u.id = s.submitter_id
+`;
+
+// Always lands as 'pending' — never auto-published; see admin review
+// functions below.
+export function createStreetTeamSubmission(
+  submitterId: number,
+  mediaType: StreetTeamMediaType,
+  mediaUrl: string,
+  caption: string | null,
+  locationText: string | null
+): StreetTeamSubmissionWithUser {
+  const db = getDb();
+  const info = db
+    .prepare(
+      `INSERT INTO street_team_submissions (submitter_id, media_type, media_url, caption, location_text)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+    .run(submitterId, mediaType, mediaUrl, caption, locationText);
+  return getStreetTeamSubmissionById(Number(info.lastInsertRowid))!;
+}
+
+export function getStreetTeamSubmissionById(id: number): StreetTeamSubmissionWithUser | undefined {
+  const db = getDb();
+  return db.prepare(`${STREET_TEAM_SELECT} WHERE s.id = ?`).get(id) as
+    | StreetTeamSubmissionWithUser
+    | undefined;
+}
+
+export function listStreetTeamSubmissionsByStatus(
+  status: StreetTeamStatus,
+  limit = 100
+): StreetTeamSubmissionWithUser[] {
+  const db = getDb();
+  return db
+    .prepare(`${STREET_TEAM_SELECT} WHERE s.status = ? ORDER BY s.created_at ASC LIMIT ?`)
+    .all(status, limit) as StreetTeamSubmissionWithUser[];
+}
+
+// Approved submissions, newest first — the public gallery.
+export function listApprovedStreetTeamSubmissions(limit = 50): StreetTeamSubmissionWithUser[] {
+  const db = getDb();
+  return db
+    .prepare(`${STREET_TEAM_SELECT} WHERE s.status = 'approved' ORDER BY s.reviewed_at DESC LIMIT ?`)
+    .all(limit) as StreetTeamSubmissionWithUser[];
+}
+
+export function listStreetTeamSubmissionsByUser(userId: number): StreetTeamSubmissionWithUser[] {
+  const db = getDb();
+  return db
+    .prepare(`${STREET_TEAM_SELECT} WHERE s.submitter_id = ? ORDER BY s.created_at DESC`)
+    .all(userId) as StreetTeamSubmissionWithUser[];
+}
+
+// Approve/reject are only valid from 'pending' — re-reviewing an
+// already-decided submission is a no-op rather than silently flipping a
+// settled decision.
+export function reviewStreetTeamSubmission(
+  submissionId: number,
+  reviewerId: number,
+  decision: "approved" | "rejected",
+  note: string | null
+): void {
+  const db = getDb();
+  db.prepare(
+    `UPDATE street_team_submissions
+     SET status = ?, reviewed_by = ?, reviewed_at = datetime('now'), review_note = ?
+     WHERE id = ? AND status = 'pending'`
+  ).run(decision, reviewerId, note, submissionId);
+}
+
+export type StreetTeamBadge = "community_correspondent" | "pueblo_photographer" | "pueblo_reporter";
+
+const STREET_TEAM_BADGE_LABELS: Record<StreetTeamBadge, string> = {
+  community_correspondent: "Community Correspondent",
+  pueblo_photographer: "Pueblo Photographer",
+  pueblo_reporter: "Pueblo Reporter",
+};
+
+export function streetTeamBadgeLabel(badge: StreetTeamBadge): string {
+  return STREET_TEAM_BADGE_LABELS[badge];
+}
+
+// Computed from approved-submission counts, not stored: Community
+// Correspondent at 1+ approved submission of any type, Pueblo
+// Photographer at 5+ approved photos, Pueblo Reporter at 5+ approved
+// videos. A member can hold more than one.
+export function getStreetTeamBadgesForUser(userId: number): StreetTeamBadge[] {
+  const db = getDb();
+  const counts = db
+    .prepare(
+      `SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN media_type = 'photo' THEN 1 ELSE 0 END) AS photos,
+         SUM(CASE WHEN media_type = 'video' THEN 1 ELSE 0 END) AS videos
+       FROM street_team_submissions
+       WHERE submitter_id = ? AND status = 'approved'`
+    )
+    .get(userId) as { total: number; photos: number; videos: number };
+
+  const badges: StreetTeamBadge[] = [];
+  if (counts.total >= 1) badges.push("community_correspondent");
+  if (counts.photos >= 5) badges.push("pueblo_photographer");
+  if (counts.videos >= 5) badges.push("pueblo_reporter");
+  return badges;
 }
