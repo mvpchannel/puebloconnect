@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
-import { getStreamById, postStreamComment, listStreamComments } from "@/lib/db";
+import { getStreamById, postStreamComment, listStreamComments, getMemberBadgesForUser } from "@/lib/db";
 
 const MAX_COMMENT_LENGTH = 1000;
 
@@ -22,6 +22,9 @@ function shapeComment(c: {
     authorUsername: c.author_username,
     authorName: [c.author_first_name, c.author_last_name].filter(Boolean).join(" ") || c.author_username,
     authorProfilePhotoPath: c.author_profile_photo_path,
+    // Surfaced in chat next to the author's name — see
+    // getMemberBadgesForUser (VIP/admin, Street Team, Rewards level).
+    authorBadges: getMemberBadgesForUser(c.author_id).map((b) => b.label),
     body: c.body,
     createdAt: c.created_at,
   };

@@ -6,6 +6,11 @@ import { heartbeatStreamViewer, getLiveViewerCount } from "@/lib/db";
 // is open; getLiveViewerCount only counts sessions heartbeating within
 // the last 60s, so a closed tab ages out on its own without needing an
 // explicit "leave" call (browsers can't reliably fire one on close).
+//
+// Also where watch-to-earn progress and stream milestones get
+// re-checked (see heartbeatStreamViewer) — there's no background job in
+// this app, so "something that runs periodically while the page is
+// open" is it.
 export async function POST(
   req: NextRequest,
   { params }: { params: { id: string; sessionId: string } }
@@ -16,6 +21,16 @@ export async function POST(
     return NextResponse.json({ error: "Invalid id." }, { status: 400 });
   }
 
-  heartbeatStreamViewer(sessionId);
-  return NextResponse.json({ liveViewerCount: getLiveViewerCount(streamId) });
+  const watchProgress = heartbeatStreamViewer(sessionId);
+  return NextResponse.json({
+    liveViewerCount: getLiveViewerCount(streamId),
+    watchProgress: watchProgress
+      ? {
+          elapsedSeconds: watchProgress.elapsedSeconds,
+          thresholdSeconds: watchProgress.thresholdSeconds,
+          pointsUnlocked: watchProgress.pointsUnlocked,
+          pointsValue: watchProgress.pointsValue,
+        }
+      : null,
+  });
 }

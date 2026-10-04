@@ -817,6 +817,121 @@ function getDb(): DatabaseSync {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_rewards_points_user ON rewards_point_events(user_id)`);
 
+    // ---------------------------------------------------------------
+    // Pueblo Live engagement + gamification: floating reactions, a
+    // pinned announcement/poll slot, stream milestones tied to real
+    // Deals, and time-limited "flash drops" that hand out a Passport
+    // stamp or a deal claim. All of this layers on the existing
+    // streams/stream_viewer_sessions tables — no changes to those.
+
+    // Floating emoji reactions. Never pruned, same as stream_comments —
+    // a light, append-only log the client polls incrementally (since
+    // id, see listStreamReactionsSince).
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_reactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stream_id INTEGER NOT NULL REFERENCES streams(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        emoji TEXT NOT NULL CHECK (emoji IN ('heart', 'fire', 'clap', 'laugh', 'wow')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_reactions_stream ON stream_reactions(stream_id, id)`);
+
+    // Pinned announcements — only one active per stream at a time;
+    // pinning a new one unpins the last (see pinStreamAnnouncement).
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_announcements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stream_id INTEGER NOT NULL REFERENCES streams(id),
+        body TEXT NOT NULL,
+        created_by INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        unpinned_at TEXT
+      )
+    `);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_stream_announcements_active ON stream_announcements(stream_id, unpinned_at)`
+    );
+
+    // Live polls — one open poll per stream at a time (creating a new
+    // one closes the last). One vote per member per poll, changeable.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_polls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stream_id INTEGER NOT NULL REFERENCES streams(id),
+        question TEXT NOT NULL,
+        created_by INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        closed_at TEXT
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_polls_active ON stream_polls(stream_id, closed_at)`);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_poll_options (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        poll_id INTEGER NOT NULL REFERENCES stream_polls(id),
+        option_text TEXT NOT NULL,
+        display_order INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_poll_votes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        poll_id INTEGER NOT NULL REFERENCES stream_polls(id),
+        option_id INTEGER NOT NULL REFERENCES stream_poll_options(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (poll_id, user_id)
+      )
+    `);
+
+    // Stream milestones ("if we reach 100 viewers..."). reached_at is
+    // snapshotted once the live viewer count crosses goal_value and
+    // never recomputed afterward, same reasoning as bop_winners — a
+    // milestone that was hit shouldn't un-hit itself if viewers dip.
+    // deal_id optionally links to a real Deal to reveal when reached.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_milestones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stream_id INTEGER NOT NULL REFERENCES streams(id),
+        goal_value INTEGER NOT NULL,
+        reward_description TEXT NOT NULL,
+        deal_id INTEGER REFERENCES deals(id),
+        created_by INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        reached_at TEXT
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_milestones_stream ON stream_milestones(stream_id)`);
+
+    // Flash drops: a time-boxed on-screen offer during a stream. Claiming
+    // one grants either a Pueblo Passport stamp or a real Deal claim —
+    // see claimStreamFlashDrop, which calls straight into those existing
+    // systems rather than reimplementing them.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_flash_drops (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stream_id INTEGER NOT NULL REFERENCES streams(id),
+        type TEXT NOT NULL CHECK (type IN ('passport_stamp', 'deal')),
+        deal_id INTEGER REFERENCES deals(id),
+        label TEXT NOT NULL,
+        created_by INTEGER NOT NULL REFERENCES users(id),
+        starts_at TEXT NOT NULL DEFAULT (datetime('now')),
+        expires_at TEXT NOT NULL
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_flash_drops_stream ON stream_flash_drops(stream_id, expires_at)`);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_flash_drop_claims (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        drop_id INTEGER NOT NULL REFERENCES stream_flash_drops(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        claimed_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (drop_id, user_id)
+      )
+    `);
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -2545,18 +2660,55 @@ export function joinStreamViewer(streamId: number, userId: number | null): numbe
     .run(streamId, userId);
   const sessionId = Number(info.lastInsertRowid);
   bumpPeakViewerCount(streamId);
+  checkStreamMilestones(streamId);
   return sessionId;
 }
 
-export function heartbeatStreamViewer(sessionId: number): void {
+const STREAM_WATCH_SECONDS_FOR_POINTS = 15 * 60;
+
+export type StreamWatchProgress = {
+  elapsedSeconds: number;
+  thresholdSeconds: number;
+  pointsUnlocked: boolean;
+  pointsValue: number;
+};
+
+// Also the watch-to-earn + milestone-checking hook: every heartbeat
+// (every ~30s while the page is open) re-evaluates both, since there's
+// no separate background job in this app — the same "checked when
+// something happens" pattern as bumpPeakViewerCount itself.
+export function heartbeatStreamViewer(sessionId: number): StreamWatchProgress | null {
   const db = getDb();
   db.prepare(
     "UPDATE stream_viewer_sessions SET last_heartbeat_at = datetime('now') WHERE id = ? AND left_at IS NULL"
   ).run(sessionId);
   const session = db
-    .prepare("SELECT stream_id FROM stream_viewer_sessions WHERE id = ?")
-    .get(sessionId) as { stream_id: number } | undefined;
-  if (session) bumpPeakViewerCount(session.stream_id);
+    .prepare("SELECT stream_id, user_id, joined_at FROM stream_viewer_sessions WHERE id = ?")
+    .get(sessionId) as { stream_id: number; user_id: number | null; joined_at: string } | undefined;
+  if (!session) return null;
+
+  bumpPeakViewerCount(session.stream_id);
+  checkStreamMilestones(session.stream_id);
+
+  const elapsedRow = db
+    .prepare(`SELECT CAST((julianday('now') - julianday(?)) * 86400 AS INTEGER) AS secs`)
+    .get(session.joined_at) as { secs: number };
+  const elapsedSeconds = Math.max(0, elapsedRow.secs);
+  const pointsUnlocked = elapsedSeconds >= STREAM_WATCH_SECONDS_FOR_POINTS;
+
+  // Idempotent (ON CONFLICT DO NOTHING in awardPoints), so it's safe to
+  // call this on every heartbeat once the threshold is crossed rather
+  // than tracking "did we already award this" separately.
+  if (session.user_id && pointsUnlocked) {
+    awardPoints(session.user_id, "stream_watch", `stream:${session.stream_id}`, POINT_VALUES.stream_watch);
+  }
+
+  return {
+    elapsedSeconds,
+    thresholdSeconds: STREAM_WATCH_SECONDS_FOR_POINTS,
+    pointsUnlocked,
+    pointsValue: POINT_VALUES.stream_watch,
+  };
 }
 
 export function leaveStreamViewer(sessionId: number): void {
@@ -4042,6 +4194,8 @@ export const POINT_VALUES = {
   booth_answer: 5,
   street_team_approved: 15,
   passport_stamp: 5,
+  stream_watch: 10,
+  stream_flash_drop: 5,
 } as const;
 
 export type RewardsAction = keyof typeof POINT_VALUES;
@@ -4153,4 +4307,379 @@ export const REWARDS_ACTION_LABELS: Record<RewardsAction, string> = {
   booth_answer: "Answered The Pueblo Booth",
   street_team_approved: "Street Team submission approved",
   passport_stamp: "Earned a Pueblo Passport stamp",
+  stream_watch: "Watched a Pueblo Live stream",
+  stream_flash_drop: "Claimed a Pueblo Live flash drop",
 };
+
+// ---------------------------------------------------------------------
+// Pueblo Live engagement + gamification functions.
+
+// ---- Floating emoji reactions -----------------------------------------
+
+export type StreamReactionEmoji = "heart" | "fire" | "clap" | "laugh" | "wow";
+
+export type StreamReaction = {
+  id: number;
+  stream_id: number;
+  user_id: number;
+  emoji: StreamReactionEmoji;
+  created_at: string;
+};
+
+// No idempotency here on purpose — a reaction is a quick, repeatable
+// tap (tapping 🔥 five times sends five floating hearts), unlike every
+// other action in this file that's "once per thing."
+export function addStreamReaction(streamId: number, userId: number, emoji: StreamReactionEmoji): StreamReaction {
+  const db = getDb();
+  const info = db
+    .prepare(`INSERT INTO stream_reactions (stream_id, user_id, emoji) VALUES (?, ?, ?)`)
+    .run(streamId, userId, emoji);
+  return db
+    .prepare(`SELECT * FROM stream_reactions WHERE id = ?`)
+    .get(Number(info.lastInsertRowid)) as StreamReaction;
+}
+
+// Polled by the client (same spirit as chat) — pass the last reaction id
+// you've already shown and get only what's new, so reactions can float
+// up the player without re-rendering ones already shown.
+export function listStreamReactionsSince(streamId: number, sinceId: number, limit = 100): StreamReaction[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT * FROM stream_reactions WHERE stream_id = ? AND id > ? ORDER BY id ASC LIMIT ?`
+    )
+    .all(streamId, sinceId, limit) as StreamReaction[];
+}
+
+export function getLatestStreamReactionId(streamId: number): number {
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT COALESCE(MAX(id), 0) AS id FROM stream_reactions WHERE stream_id = ?`)
+    .get(streamId) as { id: number };
+  return row.id;
+}
+
+// ---- Pinned announcements ----------------------------------------------
+
+export type StreamAnnouncement = {
+  id: number;
+  stream_id: number;
+  body: string;
+  created_by: number;
+  created_at: string;
+  unpinned_at: string | null;
+};
+
+// Pinning a new announcement unpins whatever was pinned before — only
+// one at a time, same reasoning as a single "current" BOP winner.
+export function pinStreamAnnouncement(streamId: number, userId: number, body: string): StreamAnnouncement {
+  const db = getDb();
+  db.prepare(
+    `UPDATE stream_announcements SET unpinned_at = datetime('now') WHERE stream_id = ? AND unpinned_at IS NULL`
+  ).run(streamId);
+  const info = db
+    .prepare(`INSERT INTO stream_announcements (stream_id, body, created_by) VALUES (?, ?, ?)`)
+    .run(streamId, body, userId);
+  return db
+    .prepare(`SELECT * FROM stream_announcements WHERE id = ?`)
+    .get(Number(info.lastInsertRowid)) as StreamAnnouncement;
+}
+
+export function unpinStreamAnnouncement(streamId: number): void {
+  const db = getDb();
+  db.prepare(
+    `UPDATE stream_announcements SET unpinned_at = datetime('now') WHERE stream_id = ? AND unpinned_at IS NULL`
+  ).run(streamId);
+}
+
+export function getPinnedStreamAnnouncement(streamId: number): StreamAnnouncement | undefined {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT * FROM stream_announcements WHERE stream_id = ? AND unpinned_at IS NULL ORDER BY created_at DESC LIMIT 1`
+    )
+    .get(streamId) as StreamAnnouncement | undefined;
+}
+
+// ---- Live polls ----------------------------------------------------------
+
+export type StreamPoll = {
+  id: number;
+  stream_id: number;
+  question: string;
+  created_by: number;
+  created_at: string;
+  closed_at: string | null;
+};
+
+export type StreamPollOption = {
+  id: number;
+  poll_id: number;
+  option_text: string;
+  display_order: number;
+  vote_count: number;
+};
+
+// Opening a new poll closes whatever was open before — same one-at-a-
+// time pinned-slot reasoning as announcements.
+export function createStreamPoll(streamId: number, userId: number, question: string, options: string[]): StreamPoll {
+  const db = getDb();
+  db.prepare(`UPDATE stream_polls SET closed_at = datetime('now') WHERE stream_id = ? AND closed_at IS NULL`).run(
+    streamId
+  );
+  const info = db
+    .prepare(`INSERT INTO stream_polls (stream_id, question, created_by) VALUES (?, ?, ?)`)
+    .run(streamId, question, userId);
+  const pollId = Number(info.lastInsertRowid);
+  const insertOption = db.prepare(
+    `INSERT INTO stream_poll_options (poll_id, option_text, display_order) VALUES (?, ?, ?)`
+  );
+  options.forEach((text, i) => insertOption.run(pollId, text, i));
+  return getStreamPollById(pollId)!;
+}
+
+export function getStreamPollById(pollId: number): StreamPoll | undefined {
+  const db = getDb();
+  return db.prepare(`SELECT * FROM stream_polls WHERE id = ?`).get(pollId) as StreamPoll | undefined;
+}
+
+export function getCurrentStreamPoll(streamId: number): StreamPoll | undefined {
+  const db = getDb();
+  return db
+    .prepare(`SELECT * FROM stream_polls WHERE stream_id = ? AND closed_at IS NULL ORDER BY created_at DESC LIMIT 1`)
+    .get(streamId) as StreamPoll | undefined;
+}
+
+export function listStreamPollOptions(pollId: number): StreamPollOption[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT o.id, o.poll_id, o.option_text, o.display_order,
+              (SELECT COUNT(*) FROM stream_poll_votes v WHERE v.option_id = o.id) AS vote_count
+       FROM stream_poll_options o
+       WHERE o.poll_id = ?
+       ORDER BY o.display_order ASC`
+    )
+    .all(pollId) as StreamPollOption[];
+}
+
+// Upsert: changing your vote replaces the previous one, same pattern as
+// castBopVote.
+export function castStreamPollVote(pollId: number, optionId: number, userId: number): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO stream_poll_votes (poll_id, option_id, user_id) VALUES (?, ?, ?)
+     ON CONFLICT(poll_id, user_id) DO UPDATE SET option_id = excluded.option_id`
+  ).run(pollId, optionId, userId);
+}
+
+export function getStreamPollUserVote(pollId: number, userId: number): number | null {
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT option_id FROM stream_poll_votes WHERE poll_id = ? AND user_id = ?`)
+    .get(pollId, userId) as { option_id: number } | undefined;
+  return row?.option_id ?? null;
+}
+
+export function closeStreamPoll(pollId: number): void {
+  const db = getDb();
+  db.prepare(`UPDATE stream_polls SET closed_at = datetime('now') WHERE id = ? AND closed_at IS NULL`).run(pollId);
+}
+
+// What to show in the pinned slot at the top of chat: an open poll
+// takes priority over a plain announcement, since a poll is also an
+// announcement but with something to do.
+export type StreamPinnedItem =
+  | { type: "poll"; poll: StreamPoll; options: StreamPollOption[] }
+  | { type: "announcement"; announcement: StreamAnnouncement }
+  | null;
+
+export function getStreamPinnedItem(streamId: number): StreamPinnedItem {
+  const poll = getCurrentStreamPoll(streamId);
+  if (poll) return { type: "poll", poll, options: listStreamPollOptions(poll.id) };
+  const announcement = getPinnedStreamAnnouncement(streamId);
+  if (announcement) return { type: "announcement", announcement };
+  return null;
+}
+
+// ---- Stream milestones ----------------------------------------------------
+
+export type StreamMilestone = {
+  id: number;
+  stream_id: number;
+  goal_value: number;
+  reward_description: string;
+  deal_id: number | null;
+  created_by: number;
+  created_at: string;
+  reached_at: string | null;
+};
+
+export function createStreamMilestone(
+  streamId: number,
+  userId: number,
+  goalValue: number,
+  rewardDescription: string,
+  dealId: number | null
+): StreamMilestone {
+  const db = getDb();
+  const info = db
+    .prepare(
+      `INSERT INTO stream_milestones (stream_id, goal_value, reward_description, deal_id, created_by)
+       VALUES (?, ?, ?, ?, ?)`
+    )
+    .run(streamId, goalValue, rewardDescription, dealId, userId);
+  return getStreamMilestoneById(Number(info.lastInsertRowid))!;
+}
+
+export function getStreamMilestoneById(id: number): StreamMilestone | undefined {
+  const db = getDb();
+  return db.prepare(`SELECT * FROM stream_milestones WHERE id = ?`).get(id) as StreamMilestone | undefined;
+}
+
+export function listStreamMilestones(streamId: number): StreamMilestone[] {
+  const db = getDb();
+  return db
+    .prepare(`SELECT * FROM stream_milestones WHERE stream_id = ? ORDER BY goal_value ASC`)
+    .all(streamId) as StreamMilestone[];
+}
+
+// Snapshots reached_at for any not-yet-reached milestone whose goal the
+// live viewer count now meets or exceeds. Called from
+// heartbeatStreamViewer/joinStreamViewer, same "checked when something
+// happens" pattern as bumpPeakViewerCount — there's no cron in this app.
+export function checkStreamMilestones(streamId: number): StreamMilestone[] {
+  const db = getDb();
+  const current = getLiveViewerCount(streamId);
+  const newlyReached = db
+    .prepare(
+      `SELECT * FROM stream_milestones WHERE stream_id = ? AND reached_at IS NULL AND goal_value <= ?`
+    )
+    .all(streamId, current) as StreamMilestone[];
+  if (newlyReached.length > 0) {
+    const ids = newlyReached.map((m) => m.id);
+    db.prepare(
+      `UPDATE stream_milestones SET reached_at = datetime('now') WHERE id IN (${ids.map(() => "?").join(",")})`
+    ).run(...ids);
+  }
+  return newlyReached.map((m) => ({ ...m, reached_at: new Date().toISOString() }));
+}
+
+// ---- Flash drops ----------------------------------------------------------
+
+export type StreamFlashDropType = "passport_stamp" | "deal";
+
+export type StreamFlashDrop = {
+  id: number;
+  stream_id: number;
+  type: StreamFlashDropType;
+  deal_id: number | null;
+  label: string;
+  created_by: number;
+  starts_at: string;
+  expires_at: string;
+};
+
+export function createStreamFlashDrop(
+  streamId: number,
+  userId: number,
+  type: StreamFlashDropType,
+  dealId: number | null,
+  label: string,
+  durationSeconds: number
+): StreamFlashDrop {
+  const db = getDb();
+  const info = db
+    .prepare(
+      `INSERT INTO stream_flash_drops (stream_id, type, deal_id, label, created_by, expires_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now', '+' || ? || ' seconds'))`
+    )
+    .run(streamId, type, dealId, label, userId, durationSeconds);
+  return getStreamFlashDropById(Number(info.lastInsertRowid))!;
+}
+
+export function getStreamFlashDropById(id: number): StreamFlashDrop | undefined {
+  const db = getDb();
+  return db.prepare(`SELECT * FROM stream_flash_drops WHERE id = ?`).get(id) as StreamFlashDrop | undefined;
+}
+
+// The one flash drop currently visible on screen, if any.
+export function getActiveStreamFlashDrop(streamId: number): StreamFlashDrop | undefined {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT * FROM stream_flash_drops
+       WHERE stream_id = ? AND starts_at <= datetime('now') AND expires_at > datetime('now')
+       ORDER BY id DESC LIMIT 1`
+    )
+    .get(streamId) as StreamFlashDrop | undefined;
+}
+
+export function hasClaimedStreamFlashDrop(dropId: number, userId: number): boolean {
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT id FROM stream_flash_drop_claims WHERE drop_id = ? AND user_id = ?`)
+    .get(dropId, userId);
+  return Boolean(row);
+}
+
+export function getStreamFlashDropClaimCount(dropId: number): number {
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT COUNT(*) AS n FROM stream_flash_drop_claims WHERE drop_id = ?`)
+    .get(dropId) as { n: number };
+  return row.n;
+}
+
+// Claiming routes straight into the real systems a drop promises —
+// Passport stamps or a Deal claim — rather than reimplementing either.
+// Idempotent (claiming twice is a no-op) and only honored while the
+// drop is still within its window.
+export function claimStreamFlashDrop(dropId: number, userId: number): { claimed: boolean; reason?: string } {
+  const drop = getStreamFlashDropById(dropId);
+  if (!drop) return { claimed: false, reason: "not_found" };
+
+  const db = getDb();
+  const now = db.prepare(`SELECT datetime('now') AS now`).get() as { now: string };
+  if (now.now < drop.starts_at || now.now >= drop.expires_at) {
+    return { claimed: false, reason: "expired" };
+  }
+
+  if (hasClaimedStreamFlashDrop(dropId, userId)) return { claimed: true };
+
+  db.prepare(`INSERT INTO stream_flash_drop_claims (drop_id, user_id) VALUES (?, ?)`).run(dropId, userId);
+
+  if (drop.type === "passport_stamp") {
+    grantPassportStamp(userId, "pueblo_live", dropId, drop.label);
+  } else if (drop.type === "deal" && drop.deal_id) {
+    claimDeal(drop.deal_id, userId);
+  }
+  awardPoints(userId, "stream_flash_drop", `flashdrop:${dropId}`, POINT_VALUES.stream_flash_drop);
+
+  return { claimed: true };
+}
+
+// ---- Chat badges -----------------------------------------------------------
+
+export type MemberBadge = { key: string; label: string };
+
+// Surfaced next to a chat author's name — VIP (admin), Street Team
+// contributor badges, and a Rewards level once it's above Newcomer.
+// Pulls straight from the Street Team and Rewards systems already
+// built rather than inventing a separate badge store.
+export function getMemberBadgesForUser(userId: number): MemberBadge[] {
+  const user = getUserById(userId);
+  const badges: MemberBadge[] = [];
+  if (user?.role === "admin") badges.push({ key: "admin", label: "Pueblo Connect Staff" });
+
+  for (const b of getStreetTeamBadgesForUser(userId)) {
+    badges.push({ key: `street_team_${b}`, label: streetTeamBadgeLabel(b) });
+  }
+
+  const level = getCurrentRewardsLevel(userId);
+  if (level.key !== "newcomer") {
+    badges.push({ key: `rewards_${level.key}`, label: level.label });
+  }
+
+  return badges;
+}

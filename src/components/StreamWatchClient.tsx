@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 type StreamStatus = "scheduled" | "live" | "ended";
@@ -10,6 +10,7 @@ type Comment = {
   authorId: number;
   authorName: string;
   authorProfilePhotoPath: string | null;
+  authorBadges: string[];
   body: string;
 };
 
@@ -23,24 +24,86 @@ type Report = {
   reason: string;
 };
 
+type ReactionEmoji = "heart" | "fire" | "clap" | "laugh" | "wow";
+const REACTION_GLYPHS: Record<ReactionEmoji, string> = {
+  heart: "❤️",
+  fire: "🔥",
+  clap: "👏",
+  laugh: "😂",
+  wow: "😮",
+};
+
+type FloatingReaction = { key: string; emoji: ReactionEmoji; left: number };
+
+type PinnedPoll = {
+  type: "poll";
+  poll: { id: number; question: string; closedAt: string | null };
+  options: { id: number; text: string; voteCount: number }[];
+  myVote: number | null;
+};
+type PinnedAnnouncement = {
+  type: "announcement";
+  announcement: { id: number; body: string; createdAt: string };
+};
+type Pinned = PinnedPoll | PinnedAnnouncement | null;
+
+type Milestone = {
+  id: number;
+  goalValue: number;
+  rewardDescription: string;
+  reached: boolean;
+  deal: { id: number; title: string; businessSlug: string } | null;
+};
+
+type FlashDropType = "passport_stamp" | "deal";
+type ActiveFlashDrop = {
+  id: number;
+  type: FlashDropType;
+  label: string;
+  expiresAt: string;
+  claimCount: number;
+  claimedByViewer: boolean;
+} | null;
+
+type HostDeal = { id: number; title: string; businessName: string };
+
+type WatchProgress = {
+  elapsedSeconds: number;
+  thresholdSeconds: number;
+  pointsUnlocked: boolean;
+  pointsValue: number;
+};
+
 type StreamWatchClientProps = {
   streamId: number;
   embedSrc: string;
   status: StreamStatus;
   isHost: boolean;
+  isAdmin: boolean;
   isLoggedIn: boolean;
   initialLikeCount: number;
   initialLiked: boolean;
   initialLiveViewerCount: number | null;
   initialTotalViewCount: number | null;
+  initialPinned: Pinned;
+  initialMilestones: Milestone[];
+  initialActiveFlashDrop: ActiveFlashDrop;
+  hostDeals: HostDeal[];
 };
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
+const REACTIONS_POLL_MS = 2_000;
+const PINNED_POLL_MS = 5_000;
+const FLASH_DROP_POLL_MS = 5_000;
+const MILESTONES_POLL_MS = 15_000;
 
 // Real backend: src/app/api/streams/[id]/* — likes, comments/chat,
-// viewer presence (join/heartbeat/leave), host start/end controls, and a
-// moderation queue (report/resolve/ban), all backed by src/lib/db.ts.
-// The <iframe> is the only part of this component that isn't this app's
+// viewer presence (join/heartbeat/leave), host start/end controls, a
+// moderation queue (report/resolve/ban), floating reactions, a pinned
+// announcement/poll slot, viewer-count milestones tied to real Deals,
+// time-limited flash drops (Passport stamp or Deal claim), and
+// watch-to-earn Rewards points — all backed by src/lib/db.ts. The
+// <iframe> is the only part of this component that isn't this app's
 // own code — it plays the host's own YouTube/Facebook/Vimeo Live
 // broadcast (bring-your-own-stream), never video served by Pueblo
 // Connect itself.
@@ -49,13 +112,20 @@ export default function StreamWatchClient({
   embedSrc,
   status,
   isHost,
+  isAdmin,
   isLoggedIn,
   initialLikeCount,
   initialLiked,
   initialLiveViewerCount,
   initialTotalViewCount,
+  initialPinned,
+  initialMilestones,
+  initialActiveFlashDrop,
+  hostDeals,
 }: StreamWatchClientProps) {
   const router = useRouter();
+  const canModerate = isHost || isAdmin;
+
   const [liked, setLiked] = useState(initialLiked);
   const [likeCount, setLikeCount] = useState(initialLikeCount);
   const [liveViewerCount, setLiveViewerCount] = useState(initialLiveViewerCount);
@@ -64,6 +134,29 @@ export default function StreamWatchClient({
   const [error, setError] = useState<string | null>(null);
   const [showModeration, setShowModeration] = useState(false);
   const [reports, setReports] = useState<Report[]>([]);
+  const [watchProgress, setWatchProgress] = useState<WatchProgress | null>(null);
+
+  const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
+  const lastReactionId = useRef(0);
+
+  const [pinned, setPinned] = useState<Pinned>(initialPinned);
+  const [milestones, setMilestones] = useState<Milestone[]>(initialMilestones);
+  const [activeDrop, setActiveDrop] = useState<ActiveFlashDrop>(initialActiveFlashDrop);
+  const [dropClaiming, setDropClaiming] = useState(false);
+
+  const [showHostTools, setShowHostTools] = useState(false);
+  const [announcementDraft, setAnnouncementDraft] = useState("");
+  const [pollQuestion, setPollQuestion] = useState("");
+  const [pollOptions, setPollOptions] = useState(["", ""]);
+  const [milestoneGoal, setMilestoneGoal] = useState("");
+  const [milestoneReward, setMilestoneReward] = useState("");
+  const [milestoneDealId, setMilestoneDealId] = useState("");
+  const [dropType, setDropType] = useState<FlashDropType>("passport_stamp");
+  const [dropLabel, setDropLabel] = useState("");
+  const [dropDuration, setDropDuration] = useState("120");
+  const [dropDealId, setDropDealId] = useState("");
+  const [hostBusy, setHostBusy] = useState(false);
+  const [hostError, setHostError] = useState<string | null>(null);
 
   const viewerSessionId = useRef<number | null>(null);
 
@@ -86,9 +179,9 @@ export default function StreamWatchClient({
       })
         .then((res) => res.json())
         .then((data) => {
-          if (!cancelled && typeof data.liveViewerCount === "number") {
-            setLiveViewerCount(data.liveViewerCount);
-          }
+          if (cancelled) return;
+          if (typeof data.liveViewerCount === "number") setLiveViewerCount(data.liveViewerCount);
+          if (data.watchProgress) setWatchProgress(data.watchProgress);
         })
         .catch(() => {});
     }, HEARTBEAT_INTERVAL_MS);
@@ -125,6 +218,105 @@ export default function StreamWatchClient({
     };
   }, [streamId, status]);
 
+  // Floating reactions: poll for anything newer than the last one shown,
+  // drop each into the floating layer, then let it animate out on its own.
+  useEffect(() => {
+    if (status !== "live") return;
+    let cancelled = false;
+    const interval = setInterval(() => {
+      fetch(`/api/streams/${streamId}/reactions?since=${lastReactionId.current}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (cancelled || !Array.isArray(data.reactions) || data.reactions.length === 0) return;
+          const incoming: FloatingReaction[] = data.reactions.map((r: { id: number; emoji: ReactionEmoji }) => ({
+            key: `${r.id}-${Math.random()}`,
+            emoji: r.emoji,
+            left: 10 + Math.random() * 80,
+          }));
+          lastReactionId.current = data.reactions[data.reactions.length - 1].id;
+          setFloatingReactions((prev) => [...prev, ...incoming]);
+          incoming.forEach((f) => {
+            setTimeout(() => {
+              setFloatingReactions((prev) => prev.filter((r) => r.key !== f.key));
+            }, 3000);
+          });
+        })
+        .catch(() => {});
+    }, REACTIONS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [streamId, status]);
+
+  // Pinned slot (poll or announcement) — polled so viewers see a host's
+  // new pin or live vote tallies without refreshing.
+  useEffect(() => {
+    if (status !== "live") return;
+    let cancelled = false;
+    const interval = setInterval(() => {
+      fetch(`/api/streams/${streamId}/pinned`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (!cancelled) setPinned(data.pinned ?? null);
+        })
+        .catch(() => {});
+    }, PINNED_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [streamId, status]);
+
+  // Active flash drop — polled so a drop the host just triggered (or one
+  // that just expired) shows up without a refresh.
+  useEffect(() => {
+    if (status !== "live") return;
+    let cancelled = false;
+    const interval = setInterval(() => {
+      fetch(`/api/streams/${streamId}/flash-drops`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (!cancelled) setActiveDrop(data.drop ?? null);
+        })
+        .catch(() => {});
+    }, FLASH_DROP_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [streamId, status]);
+
+  // Milestones — mostly updated already by the heartbeat's own
+  // check-and-snapshot, but polled here too so a viewer who isn't the
+  // one whose heartbeat crossed the goal still sees it flip.
+  useEffect(() => {
+    if (status !== "live") return;
+    let cancelled = false;
+    const interval = setInterval(() => {
+      fetch(`/api/streams/${streamId}/milestones`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (!cancelled && Array.isArray(data.milestones)) {
+            setMilestones(
+              data.milestones.map((m: { id: number; goalValue: number; rewardDescription: string; reached: boolean; deal: Milestone["deal"] }) => ({
+                id: m.id,
+                goalValue: m.goalValue,
+                rewardDescription: m.rewardDescription,
+                reached: m.reached,
+                deal: m.deal,
+              }))
+            );
+          }
+        })
+        .catch(() => {});
+    }, MILESTONES_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [streamId, status]);
+
   async function toggleLike() {
     if (!isLoggedIn) {
       setError("Log in to like this stream.");
@@ -148,6 +340,26 @@ export default function StreamWatchClient({
       setLiked(wasLiked);
       setLikeCount((c) => (wasLiked ? c + 1 : c - 1));
       setError("Couldn't reach the server.");
+    }
+  }
+
+  async function sendReaction(emoji: ReactionEmoji) {
+    if (!isLoggedIn) {
+      setError("Log in to react.");
+      return;
+    }
+    // Optimistic: show it immediately rather than waiting for the next poll.
+    const key = `self-${Date.now()}-${Math.random()}`;
+    setFloatingReactions((prev) => [...prev, { key, emoji, left: 10 + Math.random() * 80 }]);
+    setTimeout(() => setFloatingReactions((prev) => prev.filter((r) => r.key !== key)), 3000);
+    try {
+      await fetch(`/api/streams/${streamId}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji }),
+      });
+    } catch {
+      /* the optimistic float already showed; a dropped request isn't worth an error */
     }
   }
 
@@ -227,6 +439,205 @@ export default function StreamWatchClient({
     });
   }
 
+  async function voteOnPoll(pollId: number, optionId: number) {
+    if (!isLoggedIn) {
+      setError("Log in to vote.");
+      return;
+    }
+    const res = await fetch(`/api/streams/${streamId}/polls/${pollId}/vote`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ optionId }),
+    });
+    const data = await res.json();
+    if (res.ok && pinned?.type === "poll") {
+      setPinned({ ...pinned, options: data.options, myVote: optionId });
+    } else if (!res.ok) {
+      setError(data.error || "Couldn't record that vote.");
+    }
+  }
+
+  async function claimDrop() {
+    if (!isLoggedIn || !activeDrop) {
+      setError("Log in to claim this.");
+      return;
+    }
+    setDropClaiming(true);
+    try {
+      const res = await fetch(`/api/streams/${streamId}/flash-drops/${activeDrop.id}/claim`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Couldn't claim that.");
+        return;
+      }
+      setActiveDrop({ ...activeDrop, claimedByViewer: true, claimCount: activeDrop.claimCount + 1 });
+      router.refresh();
+    } finally {
+      setDropClaiming(false);
+    }
+  }
+
+  async function pinAnnouncement(e: FormEvent) {
+    e.preventDefault();
+    if (!announcementDraft.trim()) return;
+    setHostBusy(true);
+    setHostError(null);
+    try {
+      const res = await fetch(`/api/streams/${streamId}/announcement`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body: announcementDraft.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setHostError(data.error || "Couldn't pin that.");
+        return;
+      }
+      setAnnouncementDraft("");
+      setPinned({
+        type: "announcement",
+        announcement: { id: data.announcement.id, body: data.announcement.body, createdAt: new Date().toISOString() },
+      });
+    } finally {
+      setHostBusy(false);
+    }
+  }
+
+  async function createPoll(e: FormEvent) {
+    e.preventDefault();
+    const cleanOptions = pollOptions.map((o) => o.trim()).filter(Boolean);
+    if (!pollQuestion.trim() || cleanOptions.length < 2) {
+      setHostError("A poll needs a question and at least 2 options.");
+      return;
+    }
+    setHostBusy(true);
+    setHostError(null);
+    try {
+      const res = await fetch(`/api/streams/${streamId}/polls`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: pollQuestion.trim(), options: cleanOptions }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setHostError(data.error || "Couldn't open that poll.");
+        return;
+      }
+      setPinned({
+        type: "poll",
+        poll: { id: data.poll.id, question: data.poll.question, closedAt: null },
+        options: data.options,
+        myVote: null,
+      });
+      setPollQuestion("");
+      setPollOptions(["", ""]);
+    } finally {
+      setHostBusy(false);
+    }
+  }
+
+  async function closePoll() {
+    if (pinned?.type !== "poll") return;
+    setHostBusy(true);
+    try {
+      await fetch(`/api/streams/${streamId}/polls/${pinned.poll.id}/close`, { method: "POST" });
+      setPinned(null);
+    } finally {
+      setHostBusy(false);
+    }
+  }
+
+  async function createMilestone(e: FormEvent) {
+    e.preventDefault();
+    const goal = Number(milestoneGoal);
+    if (!Number.isInteger(goal) || goal <= 0 || !milestoneReward.trim()) {
+      setHostError("A milestone needs a positive viewer goal and a reward description.");
+      return;
+    }
+    setHostBusy(true);
+    setHostError(null);
+    try {
+      const res = await fetch(`/api/streams/${streamId}/milestones`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          goalValue: goal,
+          rewardDescription: milestoneReward.trim(),
+          dealId: milestoneDealId ? Number(milestoneDealId) : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setHostError(data.error || "Couldn't set that milestone.");
+        return;
+      }
+      setMilestones((prev) => [
+        ...prev,
+        {
+          id: data.milestone.id,
+          goalValue: data.milestone.goalValue,
+          rewardDescription: data.milestone.rewardDescription,
+          reached: false,
+          deal: milestoneDealId
+            ? hostDeals.find((d) => d.id === Number(milestoneDealId))
+              ? { id: Number(milestoneDealId), title: hostDeals.find((d) => d.id === Number(milestoneDealId))!.title, businessSlug: "" }
+              : null
+            : null,
+        },
+      ]);
+      setMilestoneGoal("");
+      setMilestoneReward("");
+      setMilestoneDealId("");
+    } finally {
+      setHostBusy(false);
+    }
+  }
+
+  async function triggerFlashDrop(e: FormEvent) {
+    e.preventDefault();
+    const duration = Number(dropDuration);
+    if (!dropLabel.trim() || !Number.isInteger(duration) || duration < 15) {
+      setHostError("A flash drop needs a label and a duration of at least 15 seconds.");
+      return;
+    }
+    if (dropType === "deal" && !dropDealId) {
+      setHostError("Pick a deal for a deal-type flash drop.");
+      return;
+    }
+    setHostBusy(true);
+    setHostError(null);
+    try {
+      const res = await fetch(`/api/streams/${streamId}/flash-drops`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: dropType,
+          label: dropLabel.trim(),
+          durationSeconds: duration,
+          dealId: dropType === "deal" ? Number(dropDealId) : undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setHostError(data.error || "Couldn't trigger that flash drop.");
+        return;
+      }
+      setActiveDrop({
+        id: data.drop.id,
+        type: data.drop.type,
+        label: data.drop.label,
+        expiresAt: data.drop.expiresAt,
+        claimCount: 0,
+        claimedByViewer: false,
+      });
+      setDropLabel("");
+    } finally {
+      setHostBusy(false);
+    }
+  }
+
+  const nextMilestone = milestones.find((m) => !m.reached);
+
   return (
     <div>
       <div className="central-meta item">
@@ -238,8 +649,40 @@ export default function StreamWatchClient({
             allowFullScreen
             style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: 0 }}
           />
+          {/* Floating reactions layer */}
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              overflow: "hidden",
+            }}
+          >
+            {floatingReactions.map((r) => (
+              <span
+                key={r.key}
+                className="pc-float-reaction"
+                style={{
+                  position: "absolute",
+                  bottom: 10,
+                  left: `${r.left}%`,
+                  fontSize: 28,
+                }}
+              >
+                {REACTION_GLYPHS[r.emoji]}
+              </span>
+            ))}
+          </div>
+          <style>{`
+            @keyframes pc-float-up {
+              0% { transform: translateY(0); opacity: 1; }
+              100% { transform: translateY(-220px); opacity: 0; }
+            }
+            .pc-float-reaction { animation: pc-float-up 3s ease-out forwards; }
+          `}</style>
         </div>
-        <div style={{ padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+
+        <div style={{ padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
           <div>
             {status === "live" && liveViewerCount !== null && (
               <span style={{ color: "#555" }}>{liveViewerCount} watching now</span>
@@ -248,6 +691,30 @@ export default function StreamWatchClient({
               <span style={{ color: "#555" }}>{initialTotalViewCount} views</span>
             )}
           </div>
+
+          {status === "live" && (
+            <div style={{ display: "flex", gap: 4 }}>
+              {(Object.keys(REACTION_GLYPHS) as ReactionEmoji[]).map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => sendReaction(emoji)}
+                  title={emoji}
+                  style={{
+                    background: "none",
+                    border: "1px solid #eee",
+                    borderRadius: 20,
+                    padding: "4px 10px",
+                    cursor: "pointer",
+                    fontSize: 16,
+                  }}
+                >
+                  {REACTION_GLYPHS[emoji]}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div style={{ display: "flex", gap: 8 }}>
             {isHost && status === "scheduled" && (
               <button className="mtr-btn signup" type="button" onClick={goLive}>
@@ -259,7 +726,12 @@ export default function StreamWatchClient({
                 <span>End Stream</span>
               </button>
             )}
-            {isHost && (
+            {canModerate && status === "live" && (
+              <button className="mtr-btn signin" type="button" onClick={() => setShowHostTools((v) => !v)}>
+                <span>Host Tools</span>
+              </button>
+            )}
+            {canModerate && (
               <button className="mtr-btn signin" type="button" onClick={loadModeration}>
                 <span>Moderation</span>
               </button>
@@ -273,10 +745,264 @@ export default function StreamWatchClient({
             </button>
           </div>
         </div>
+
+        {status === "live" && isLoggedIn && watchProgress && (
+          <div style={{ padding: "0 20px 14px" }}>
+            <div style={{ fontSize: 12, color: "#888", marginBottom: 4 }}>
+              {watchProgress.pointsUnlocked
+                ? `+${watchProgress.pointsValue} Pueblo Points earned for watching`
+                : `Watch ${Math.ceil(watchProgress.thresholdSeconds / 60)} min to earn ${watchProgress.pointsValue} Pueblo Points`}
+            </div>
+            <div style={{ height: 6, background: "#eee", borderRadius: 3, overflow: "hidden" }}>
+              <div
+                style={{
+                  height: "100%",
+                  width: `${Math.min(100, (watchProgress.elapsedSeconds / watchProgress.thresholdSeconds) * 100)}%`,
+                  background: watchProgress.pointsUnlocked ? "#2a8f2a" : "#1877d1",
+                  transition: "width 1s linear",
+                }}
+              />
+            </div>
+          </div>
+        )}
+
         {error && (
           <p role="alert" style={{ color: "#c0392b", padding: "0 20px 12px" }}>{error}</p>
         )}
       </div>
+
+      {status === "live" && activeDrop && (
+        <div className="central-meta item" style={{ background: "#fff8e6" }}>
+          <div style={{ padding: "14px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <strong>⚡ Flash Drop:</strong> {activeDrop.label}
+              <div style={{ fontSize: 12, color: "#999" }}>
+                {activeDrop.claimCount} claimed · ends{" "}
+                {new Date(activeDrop.expiresAt).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" })}
+              </div>
+            </div>
+            {isLoggedIn ? (
+              <button
+                className="mtr-btn signup"
+                type="button"
+                disabled={activeDrop.claimedByViewer || dropClaiming}
+                onClick={claimDrop}
+              >
+                <span>{activeDrop.claimedByViewer ? "Claimed ✓" : dropClaiming ? "Claiming…" : "Claim it"}</span>
+              </button>
+            ) : (
+              <span style={{ fontSize: 13, color: "#999" }}>Log in to claim</span>
+            )}
+          </div>
+        </div>
+      )}
+
+      {status === "live" && milestones.length > 0 && (
+        <div className="central-meta item">
+          <div style={{ padding: 20 }}>
+            <h4 style={{ marginBottom: 12 }}>Stream Milestones</h4>
+            {milestones.map((m) => {
+              const progress = liveViewerCount !== null ? Math.min(100, (liveViewerCount / m.goalValue) * 100) : 0;
+              return (
+                <div key={m.id} style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 13, marginBottom: 4 }}>
+                    {m.reached ? "🎉" : "🎯"} {m.rewardDescription}
+                    {m.deal && (
+                      <>
+                        {" "}
+                        —{" "}
+                        <a href={`/businesses/${m.deal.businessSlug}`}>{m.deal.title}</a>
+                      </>
+                    )}
+                    <span style={{ color: "#999", marginLeft: 6 }}>
+                      ({liveViewerCount ?? 0}/{m.goalValue} viewers)
+                    </span>
+                  </div>
+                  <div style={{ height: 6, background: "#eee", borderRadius: 3, overflow: "hidden" }}>
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${progress}%`,
+                        background: m.reached ? "#2a8f2a" : "#f5a623",
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {canModerate && showHostTools && status === "live" && (
+        <div className="central-meta item">
+          <div style={{ padding: 20 }}>
+            <h4 style={{ marginBottom: 12 }}>Host Tools</h4>
+            {hostError && <p role="alert" style={{ color: "#c0392b", marginBottom: 10 }}>{hostError}</p>}
+
+            <div className="row">
+              <div className="col-md-6" style={{ marginBottom: 16 }}>
+                <h5 style={{ marginBottom: 6 }}>Pin an announcement</h5>
+                <form onSubmit={pinAnnouncement}>
+                  <input
+                    type="text"
+                    placeholder="e.g. We'll be visiting a local business next!"
+                    maxLength={300}
+                    value={announcementDraft}
+                    onChange={(e) => setAnnouncementDraft(e.target.value)}
+                    className="form-control"
+                    style={{ marginBottom: 6 }}
+                  />
+                  <button className="btn btn-primary btn-sm" type="submit" disabled={hostBusy || !announcementDraft.trim()}>
+                    Pin
+                  </button>
+                </form>
+              </div>
+
+              <div className="col-md-6" style={{ marginBottom: 16 }}>
+                <h5 style={{ marginBottom: 6 }}>Open a poll</h5>
+                <form onSubmit={createPoll}>
+                  <input
+                    type="text"
+                    placeholder="Question"
+                    maxLength={200}
+                    value={pollQuestion}
+                    onChange={(e) => setPollQuestion(e.target.value)}
+                    className="form-control"
+                    style={{ marginBottom: 6 }}
+                  />
+                  {pollOptions.map((opt, i) => (
+                    <input
+                      key={i}
+                      type="text"
+                      placeholder={`Option ${i + 1}`}
+                      maxLength={80}
+                      value={opt}
+                      onChange={(e) =>
+                        setPollOptions((prev) => prev.map((o, idx) => (idx === i ? e.target.value : o)))
+                      }
+                      className="form-control"
+                      style={{ marginBottom: 6 }}
+                    />
+                  ))}
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {pollOptions.length < 6 && (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-default"
+                        onClick={() => setPollOptions((prev) => [...prev, ""])}
+                      >
+                        + Option
+                      </button>
+                    )}
+                    <button className="btn btn-primary btn-sm" type="submit" disabled={hostBusy}>
+                      Open poll
+                    </button>
+                    {pinned?.type === "poll" && (
+                      <button type="button" className="btn btn-sm btn-danger" onClick={closePoll} disabled={hostBusy}>
+                        Close current poll
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              <div className="col-md-6" style={{ marginBottom: 16 }}>
+                <h5 style={{ marginBottom: 6 }}>Set a milestone</h5>
+                <form onSubmit={createMilestone}>
+                  <input
+                    type="number"
+                    placeholder="Viewer goal, e.g. 100"
+                    min={1}
+                    value={milestoneGoal}
+                    onChange={(e) => setMilestoneGoal(e.target.value)}
+                    className="form-control"
+                    style={{ marginBottom: 6 }}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Reward, e.g. We unlock a Flash Deal!"
+                    maxLength={200}
+                    value={milestoneReward}
+                    onChange={(e) => setMilestoneReward(e.target.value)}
+                    className="form-control"
+                    style={{ marginBottom: 6 }}
+                  />
+                  {hostDeals.length > 0 && (
+                    <select
+                      value={milestoneDealId}
+                      onChange={(e) => setMilestoneDealId(e.target.value)}
+                      className="form-control"
+                      style={{ marginBottom: 6 }}
+                    >
+                      <option value="">No deal attached</option>
+                      {hostDeals.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.businessName}: {d.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <button className="btn btn-primary btn-sm" type="submit" disabled={hostBusy}>
+                    Set milestone
+                  </button>
+                </form>
+              </div>
+
+              <div className="col-md-6" style={{ marginBottom: 16 }}>
+                <h5 style={{ marginBottom: 6 }}>Trigger a flash drop</h5>
+                <form onSubmit={triggerFlashDrop}>
+                  <select
+                    value={dropType}
+                    onChange={(e) => setDropType(e.target.value as FlashDropType)}
+                    className="form-control"
+                    style={{ marginBottom: 6 }}
+                  >
+                    <option value="passport_stamp">Pueblo Passport stamp</option>
+                    <option value="deal">Deal claim</option>
+                  </select>
+                  {dropType === "deal" && (
+                    <select
+                      value={dropDealId}
+                      onChange={(e) => setDropDealId(e.target.value)}
+                      className="form-control"
+                      style={{ marginBottom: 6 }}
+                    >
+                      <option value="">Pick a deal…</option>
+                      {hostDeals.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {d.businessName}: {d.title}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  <input
+                    type="text"
+                    placeholder="Label, e.g. First 20 viewers get a stamp!"
+                    maxLength={150}
+                    value={dropLabel}
+                    onChange={(e) => setDropLabel(e.target.value)}
+                    className="form-control"
+                    style={{ marginBottom: 6 }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="Duration (seconds)"
+                    min={15}
+                    value={dropDuration}
+                    onChange={(e) => setDropDuration(e.target.value)}
+                    className="form-control"
+                    style={{ marginBottom: 6 }}
+                  />
+                  <button className="btn btn-primary btn-sm" type="submit" disabled={hostBusy}>
+                    Trigger drop
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showModeration && (
         <div className="central-meta item">
@@ -308,6 +1034,59 @@ export default function StreamWatchClient({
         </div>
       )}
 
+      {status === "live" && pinned && (
+        <div className="central-meta item" style={{ background: "#eef6ff" }}>
+          <div style={{ padding: "14px 20px" }}>
+            {pinned.type === "announcement" ? (
+              <p style={{ margin: 0 }}>📌 {pinned.announcement.body}</p>
+            ) : (
+              <>
+                <p style={{ margin: "0 0 10px", fontWeight: 600 }}>📊 {pinned.poll.question}</p>
+                {pinned.options.map((o) => {
+                  const total = pinned.options.reduce((sum, opt) => sum + opt.voteCount, 0);
+                  const pct = total > 0 ? Math.round((o.voteCount / total) * 100) : 0;
+                  const isMine = pinned.myVote === o.id;
+                  return (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => voteOnPoll(pinned.poll.id, o.id)}
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        textAlign: "left",
+                        background: isMine ? "#dbeafe" : "#fff",
+                        border: "1px solid #ddd",
+                        borderRadius: 4,
+                        padding: "6px 10px",
+                        marginBottom: 6,
+                        cursor: "pointer",
+                        position: "relative",
+                      }}
+                    >
+                      <span
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          width: `${pct}%`,
+                          background: "#c7e0ff",
+                          borderRadius: 4,
+                          zIndex: 0,
+                        }}
+                      />
+                      <span style={{ position: "relative", zIndex: 1 }}>
+                        {isMine ? "✓ " : ""}
+                        {o.text} — {o.voteCount} ({pct}%)
+                      </span>
+                    </button>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="central-meta item">
         <div style={{ padding: 20 }}>
           <h4 style={{ marginBottom: 12 }}>Chat</h4>
@@ -316,7 +1095,23 @@ export default function StreamWatchClient({
             {comments.map((c) => (
               <div key={c.id} style={{ padding: "4px 0", display: "flex", justifyContent: "space-between" }}>
                 <span>
-                  <strong>{c.authorName}:</strong> {c.body}
+                  <strong>{c.authorName}</strong>
+                  {c.authorBadges?.map((b) => (
+                    <span
+                      key={b}
+                      style={{
+                        fontSize: 10,
+                        background: "#1877d1",
+                        color: "#fff",
+                        borderRadius: 3,
+                        padding: "1px 5px",
+                        marginLeft: 5,
+                      }}
+                    >
+                      {b}
+                    </span>
+                  ))}
+                  : {c.body}
                 </span>
                 {isLoggedIn && (
                   <button
