@@ -6,6 +6,7 @@ import {
   sendFriendRequest,
   getUserById,
   enqueueEmail,
+  createNotification,
 } from "@/lib/db";
 import { processEmailQueue } from "@/lib/email";
 
@@ -79,6 +80,7 @@ export async function POST(req: NextRequest) {
     : "Someone";
   enqueueEmail(recipient.email, "friend_request", { fromName: senderName });
   void processEmailQueue();
+  createNotification(recipientId, session.sub, "friend_request", "user", session.sub);
 
   return NextResponse.json({ request: shapeRequest(request) }, { status: 201 });
 }

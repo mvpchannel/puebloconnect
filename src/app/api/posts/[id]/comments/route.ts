@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
-import { getPostById, addComment, listCommentsForPost } from "@/lib/db";
+import { getPostById, addComment, listCommentsForPost, createNotification } from "@/lib/db";
 
 const MAX_COMMENT_LENGTH = 2000;
 
@@ -78,5 +78,6 @@ export async function POST(
   }
 
   const comment = addComment(postId, session.sub, text.trim());
+  createNotification(post.author_id, session.sub, "post_comment", "post", postId);
   return NextResponse.json({ comment: shapeComment(comment) }, { status: 201 });
 }

@@ -1049,6 +1049,28 @@ function getDb(): DatabaseSync {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_neighborhood_report_followers_report ON neighborhood_report_followers(report_id)`);
 
+    // ---------------------------------------------------------------
+    // In-app notifications feed (the bell icon in Header.tsx / the
+    // /notifications page) — previously 100% hardcoded sample content
+    // ("bob frank liked your post"). This is the real, in-app version of
+    // what friend_request/friend_accepted/new_message/post_like/
+    // post_comment already trigger as emails elsewhere — this table is
+    // populated alongside those same real events (see createNotification
+    // call sites), not instead of the emails.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS notifications (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        actor_id INTEGER REFERENCES users(id),
+        kind TEXT NOT NULL CHECK (kind IN ('friend_request', 'friend_accepted', 'new_message', 'post_like', 'post_comment')),
+        ref_type TEXT,
+        ref_id INTEGER,
+        read_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at)`);
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -5277,4 +5299,87 @@ export function listReportFollowerEmails(reportId: number, excludeUserId?: numbe
     )
     .all(reportId, excludeUserId ?? -1) as { email: string }[];
   return rows.map((r) => r.email);
+}
+
+// ---------------------------------------------------------------------
+// In-app notifications (the Header.tsx bell + /notifications page).
+// Created alongside the same real events that already enqueue a
+// notification EMAIL (friend_request, friend_accepted, new_message — see
+// their route handlers) plus two new in-app-only kinds (post_like,
+// post_comment) that don't have an email counterpart. This table is
+// additive to the email system, not a replacement for it.
+
+export type NotificationKind = "friend_request" | "friend_accepted" | "new_message" | "post_like" | "post_comment";
+
+export type Notification = {
+  id: number;
+  user_id: number;
+  actor_id: number | null;
+  kind: NotificationKind;
+  ref_type: string | null;
+  ref_id: number | null;
+  read_at: string | null;
+  created_at: string;
+  actor_username: string | null;
+  actor_first_name: string | null;
+  actor_last_name: string | null;
+  actor_profile_photo_path: string | null;
+};
+
+// userId is who the notification is FOR. Silently no-ops a self-notify
+// (e.g. liking your own post) — never worth surfacing to yourself.
+export function createNotification(
+  userId: number,
+  actorId: number | null,
+  kind: NotificationKind,
+  refType: string | null,
+  refId: number | null
+): void {
+  if (actorId !== null && actorId === userId) return;
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO notifications (user_id, actor_id, kind, ref_type, ref_id) VALUES (?, ?, ?, ?, ?)`
+  ).run(userId, actorId, kind, refType, refId);
+}
+
+const NOTIFICATION_SELECT = `
+  SELECT
+    n.id, n.user_id, n.actor_id, n.kind, n.ref_type, n.ref_id, n.read_at, n.created_at,
+    u.username AS actor_username, u.first_name AS actor_first_name,
+    u.last_name AS actor_last_name, u.profile_photo_path AS actor_profile_photo_path
+  FROM notifications n
+  LEFT JOIN users u ON u.id = n.actor_id
+`;
+
+export function listNotifications(userId: number, limit = 30): Notification[] {
+  const db = getDb();
+  return db
+    .prepare(`${NOTIFICATION_SELECT} WHERE n.user_id = ? ORDER BY n.created_at DESC LIMIT ?`)
+    .all(userId, limit) as Notification[];
+}
+
+export function countUnreadNotifications(userId: number): number {
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT COUNT(*) AS c FROM notifications WHERE user_id = ? AND read_at IS NULL`)
+    .get(userId) as { c: number };
+  return row.c;
+}
+
+export function markAllNotificationsRead(userId: number): void {
+  const db = getDb();
+  db.prepare(
+    `UPDATE notifications SET read_at = datetime('now') WHERE user_id = ? AND read_at IS NULL`
+  ).run(userId);
+}
+
+// Dismissing one (the "X" in the notifications list) deletes it outright
+// — there's no "unread but dismissed" state in this UI, same as the
+// vendor template's own del-icon behavior this was ported from.
+export function deleteNotification(notificationId: number, userId: number): boolean {
+  const db = getDb();
+  const info = db
+    .prepare(`DELETE FROM notifications WHERE id = ? AND user_id = ?`)
+    .run(notificationId, userId);
+  return info.changes > 0;
 }

@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { formatRelativeTime } from "@/lib/time";
+import { NOTIFICATION_TEXT, NOTIFICATION_LINK, type NotificationItem } from "@/lib/notification-text";
 
 type SessionUser = { id: number; username: string; email: string; role: "member" | "admin" };
 
@@ -15,22 +17,36 @@ type SessionUser = { id: number; username: string; email: string; role: "member"
  * like "Home Social 2" / "Home Company" / "404 error page" — dropped here;
  * see MIGRATION_STATUS.md).
  *
- * STATUS: navigation links work (real routes). The search box, notification
- * bell, and message dropdowns still show static placeholder data — no
- * backend wired up yet. See /FUNCTIONALITY_STATUS.md in the Phase 0 static
- * site for the full feature-by-feature breakdown (same gaps apply here).
+ * STATUS: navigation links work (real routes). The notification bell and
+ * message badge are real now — see /api/notifications and
+ * countUnreadMessages in src/lib/db.ts. The search box is still a static
+ * placeholder — no site-wide search exists yet.
  */
 export default function Header() {
   const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [user, setUser] = useState<SessionUser | null>(null);
+  const [unreadMessageCount, setUnreadMessageCount] = useState(0);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     fetch("/api/auth/session")
       .then((res) => res.json())
       .then((data) => {
-        if (!cancelled) setUser(data.user);
+        if (cancelled) return;
+        setUser(data.user);
+        setUnreadMessageCount(data.unreadMessageCount ?? 0);
+        setUnreadNotificationCount(data.unreadNotificationCount ?? 0);
+        if (data.user) {
+          fetch("/api/notifications")
+            .then((r) => r.json())
+            .then((nd) => {
+              if (!cancelled) setNotifications(nd.notifications || []);
+            })
+            .catch(() => {});
+        }
       })
       .catch(() => {
         /* STATUS: if this fails, the header just shows the logged-out state. */
@@ -39,6 +55,31 @@ export default function Header() {
       cancelled = true;
     };
   }, []);
+
+  // Mark everything read the first time the member actually opens the
+  // bell dropdown — not on page load, so the badge count is still
+  // meaningful if they never open it.
+  async function handleBellOpen() {
+    if (unreadNotificationCount === 0) return;
+    setUnreadNotificationCount(0);
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    try {
+      await fetch("/api/notifications", { method: "POST" });
+    } catch {
+      /* best-effort — a failed mark-read just means the badge may reappear next load */
+    }
+  }
+
+  async function dismissNotification(id: number, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    try {
+      await fetch(`/api/notifications/${id}`, { method: "DELETE" });
+    } catch {
+      /* best-effort */
+    }
+  }
 
   async function handleLogout(e: React.MouseEvent) {
     e.preventDefault();
@@ -179,26 +220,51 @@ export default function Header() {
               </Link>
             </li>
             <li>
-              <a href="#" title="Notifications" data-ripple="">
+              <a href="#" title="Notifications" data-ripple="" onClick={(e) => { e.preventDefault(); handleBellOpen(); }}>
                 <i className="ti-bell" />
-                <span>0</span>
+                <span>{unreadNotificationCount}</span>
               </a>
-              {/* STATUS: needs backend/API — static placeholder, no real notifications yet. */}
               <div className="dropdowns">
-                <span>No new notifications</span>
+                {notifications.length === 0 && <span>No new notifications</span>}
+                {notifications.map((n) => (
+                  <Link
+                    key={n.id}
+                    href={NOTIFICATION_LINK[n.kind]}
+                    title=""
+                    style={{ display: "flex", alignItems: "center", gap: 8, opacity: n.read ? 0.6 : 1 }}
+                  >
+                    <img
+                      src={n.actor?.profilePhotoPath || "/images/defaults/default-avatar-male.jpg"}
+                      alt=""
+                      style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
+                    />
+                    <span style={{ flex: 1, fontSize: 13 }}>
+                      {NOTIFICATION_TEXT[n.kind](n.actor?.name || "Someone")}
+                      <br />
+                      <span style={{ color: "#999", fontSize: 11 }}>{formatRelativeTime(n.createdAt)}</span>
+                    </span>
+                    <i
+                      className="fa fa-times"
+                      style={{ color: "#ccc", fontSize: 11 }}
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Dismiss"
+                      onClick={(e) => dismissNotification(n.id, e)}
+                    />
+                  </Link>
+                ))}
                 <Link href="/notifications" title="" className="more-mesg">
                   view all
                 </Link>
               </div>
             </li>
             <li>
-              <a href="#" title="Messages" data-ripple="">
+              <Link href="/messages" title="Messages" data-ripple="">
                 <i className="ti-comment" />
-                <span>0</span>
-              </a>
-              {/* STATUS: needs backend/API — static placeholder, no real messages yet. */}
+                <span>{unreadMessageCount}</span>
+              </Link>
               <div className="dropdowns">
-                <span>No new messages</span>
+                <span>{unreadMessageCount > 0 ? `${unreadMessageCount} unread message${unreadMessageCount === 1 ? "" : "s"}` : "No new messages"}</span>
                 <Link href="/messages" title="" className="more-mesg">
                   view all
                 </Link>

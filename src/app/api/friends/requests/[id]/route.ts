@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
-import { respondToFriendRequest, getUserById, enqueueEmail } from "@/lib/db";
+import { respondToFriendRequest, getUserById, enqueueEmail, createNotification } from "@/lib/db";
 import { processEmailQueue } from "@/lib/email";
 
 // POST /api/friends/requests/:id — accept or decline a friend request.
@@ -52,6 +52,7 @@ export async function POST(
         [responder.first_name, responder.last_name].filter(Boolean).join(" ") || responder.username;
       enqueueEmail(originalSender.email, "friend_accepted", { fromName: responderName });
       void processEmailQueue();
+      createNotification(originalSender.id, session.sub, "friend_accepted", "user", session.sub);
     }
   }
 

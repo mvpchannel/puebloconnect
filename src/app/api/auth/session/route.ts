@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifySession, SESSION_COOKIE_NAME } from "@/lib/session";
-import { getUserById } from "@/lib/db";
+import { getUserById, countUnreadMessages, countUnreadNotifications } from "@/lib/db";
 
 // GET /api/auth/session — used by client components to ask "who am I?"
 // Re-reads the user from the DB (not just the cookie payload) so a role
@@ -19,6 +19,12 @@ export async function GET(req: NextRequest) {
   if (user.session_version !== payload.pwv) return NextResponse.json({ user: null });
   if (user.account_status !== "active") return NextResponse.json({ user: null });
 
-  // getUserById already excludes password_hash.
-  return NextResponse.json({ user });
+  // getUserById already excludes password_hash. Real counts (not static
+  // placeholders) for the Header.tsx badges — see countUnreadMessages/
+  // countUnreadNotifications in db.ts.
+  return NextResponse.json({
+    user,
+    unreadMessageCount: countUnreadMessages(user.id),
+    unreadNotificationCount: countUnreadNotifications(user.id),
+  });
 }

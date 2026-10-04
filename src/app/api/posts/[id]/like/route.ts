@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
-import { getPostById, togglePostLike } from "@/lib/db";
+import { getPostById, togglePostLike, createNotification } from "@/lib/db";
 
 // POST /api/posts/:id/like — toggle the requesting user's like on a post.
 // Idempotent per click thanks to the UNIQUE(post_id, user_id) constraint
@@ -21,5 +21,8 @@ export async function POST(
   if (!post) return NextResponse.json({ error: "Post not found." }, { status: 404 });
 
   const result = togglePostLike(postId, session.sub);
+  if (result.liked) {
+    createNotification(post.author_id, session.sub, "post_like", "post", postId);
+  }
   return NextResponse.json(result);
 }

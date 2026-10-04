@@ -6,6 +6,7 @@ import {
   sendMessage,
   getUserById,
   enqueueEmail,
+  createNotification,
 } from "@/lib/db";
 import { processEmailQueue } from "@/lib/email";
 
@@ -101,6 +102,7 @@ export async function POST(
     : "Someone";
   enqueueEmail(recipient.email, "new_message", { fromName: senderName });
   void processEmailQueue();
+  createNotification(otherUserId, session.sub, "new_message", "user", session.sub);
 
   return NextResponse.json({ message: shapeMessage(message) }, { status: 201 });
 }

@@ -3,6 +3,10 @@ import Link from "next/link";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Sidebar from "@/components/Sidebar";
+import NotificationsList from "@/components/NotificationsList";
+import { getCurrentUser } from "@/lib/require-user";
+import { listNotifications } from "@/lib/db";
+import { shapeNotification } from "@/app/api/notifications/route";
 
 export const metadata: Metadata = {
   title: "Notifications",
@@ -15,9 +19,14 @@ export const metadata: Metadata = {
 // and about/page.tsx do, same visual system as the rest of the site).
 // Member-only — gated in src/middleware.ts.
 //
-// STATUS: needs backend/API — sample notifications shown for layout; no
-// real notifications table exists yet.
-export default function NotificationsPage() {
+// Real backend: listNotifications/shapeNotification (same as the Header.tsx
+// bell dropdown and GET /api/notifications) — rendered server-side here so
+// the full history shows immediately, with NotificationsList handling the
+// dismiss button and the mark-all-read-on-open call client-side.
+export default async function NotificationsPage() {
+  const session = await getCurrentUser();
+  const notifications = session ? listNotifications(session.sub, 100).map(shapeNotification) : [];
+
   return (
     <>
       <Header />
@@ -51,58 +60,13 @@ export default function NotificationsPage() {
                 <div className="central-meta">
                   <div className="editing-interest">
                     <h5 className="f-title"><i className="ti-bell" /> All Notifications</h5>
-                    <div className="notification-box">
-                      <ul>
-                        <li>
-                          <figure><img src="/images/resources/friend-avatar.jpg" alt="" /></figure>
-                          <div className="notifi-meta">
-                            <p>bob frank liked your post</p>
-                            <span>30 minutes ago</span>
-                          </div>
-                          <i className="del fa fa-close" />
-                        </li>
-                        <li>
-                          <figure><img src="/images/resources/friend-avatar2.jpg" alt="" /></figure>
-                          <div className="notifi-meta">
-                            <p>Sarah Hetfield commented on your photo.</p>
-                            <span>1 hour ago</span>
-                          </div>
-                          <i className="del fa fa-close" />
-                        </li>
-                        <li>
-                          <figure><img src="/images/resources/friend-avatar3.jpg" alt="" /></figure>
-                          <div className="notifi-meta">
-                            <p>Mathilda Brinker commented on your new profile status.</p>
-                            <span>2 hours ago</span>
-                          </div>
-                          <i className="del fa fa-close" />
-                        </li>
-                        <li>
-                          <figure><img src="/images/resources/friend-avatar4.jpg" alt="" /></figure>
-                          <div className="notifi-meta">
-                            <p>Green Goo Rock invited you to attend his event, Goo in Gotham Bar.</p>
-                            <span>2 hours ago</span>
-                          </div>
-                          <i className="del fa fa-close" />
-                        </li>
-                        <li>
-                          <figure><img src="/images/resources/friend-avatar5.jpg" alt="" /></figure>
-                          <div className="notifi-meta">
-                            <p>Chris Greyson liked your profile status.</p>
-                            <span>1 day ago</span>
-                          </div>
-                          <i className="del fa fa-close" />
-                        </li>
-                        <li>
-                          <figure><img src="/images/resources/friend-avatar6.jpg" alt="" /></figure>
-                          <div className="notifi-meta">
-                            <p>You and Nicholas Grissom just became friends.</p>
-                            <span>2 days ago</span>
-                          </div>
-                          <i className="del fa fa-close" />
-                        </li>
-                      </ul>
-                    </div>
+                    {!session ? (
+                      <p style={{ color: "#888" }}>
+                        <Link href="/login" title="">Log in</Link> to see your notifications.
+                      </p>
+                    ) : (
+                      <NotificationsList initial={notifications} />
+                    )}
                   </div>
                 </div>
               </div>
