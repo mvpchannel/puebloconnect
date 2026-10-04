@@ -15,6 +15,14 @@ import Link from "next/link";
  * email-verification / password-reset system — see src/lib/db.ts,
  * src/lib/password.ts, src/lib/session.ts, src/lib/tokens.ts,
  * src/lib/email.ts.
+ *
+ * The left-hand feature panel used to carry the site's whole pitch
+ * ("Pueblo Connect is free to use...") because this page doubled as the
+ * de facto homepage — "/" just redirect()'d straight here. Now that a
+ * real public landing page exists at "/" (see src/app/(site)/page.tsx),
+ * that full pitch lives there; this panel just needs to orient someone
+ * who landed here directly (a bookmark, a shared link) and point them
+ * back to it, not repeat it.
  */
 function LoginForm() {
   const router = useRouter();
@@ -132,9 +140,14 @@ function LoginForm() {
           <div className="land-featurearea">
             <div className="land-meta">
               <h1>Pueblo Connect&nbsp;</h1>
-              <p>
-                Pueblo Connect is free to use for as long as you want.
-              </p>
+              <p>Connect Local. Shop Local. Grow Together.</p>
+              <Link
+                href="/"
+                title=""
+                style={{ color: "#fff", textDecoration: "underline", fontSize: 14 }}
+              >
+                &larr; See what Pueblo Connect is all about
+              </Link>
             </div>
           </div>
         </div>
