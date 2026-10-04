@@ -70,18 +70,20 @@ export async function POST(req: NextRequest) {
     removeCoverPhoto,
   } = (body ?? {}) as Record<string, unknown>;
 
-  if (typeof firstName !== "string" || typeof lastName !== "string") {
-    return NextResponse.json({ error: "First and last name are required." }, { status: 400 });
-  }
-  const cleanFirst = firstName.trim();
-  const cleanLast = lastName.trim();
+  // Name/city are optional so the profile page's inline avatar/cover
+  // controls can send an image-only update; anything omitted keeps its
+  // current value (the Edit Profile form always sends all of them).
+  const existing = getUserById(session.sub);
+  if (!existing) return NextResponse.json({ error: "Not logged in." }, { status: 401 });
+  const cleanFirst = (typeof firstName === "string" ? firstName : existing.first_name ?? "").trim();
+  const cleanLast = (typeof lastName === "string" ? lastName : existing.last_name ?? "").trim();
   if (!cleanFirst || !cleanLast) {
     return NextResponse.json({ error: "First and last name are required." }, { status: 400 });
   }
   if (cleanFirst.length > 60 || cleanLast.length > 60) {
     return NextResponse.json({ error: "Name is too long." }, { status: 400 });
   }
-  const cleanCity = typeof city === "string" ? city.trim().slice(0, 120) : "";
+  const cleanCity = typeof city === "string" ? city.trim().slice(0, 120) : existing.city ?? "";
 
   // profilePhotoPath/coverPhotoPath stay `undefined` (leave existing image
   // alone) unless the member either removed it or submitted a new one —

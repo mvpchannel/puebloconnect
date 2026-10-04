@@ -6,6 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import PostComposer from "@/components/PostComposer";
 import PostCard from "@/components/PostCard";
 import ProfileActions from "@/components/ProfileActions";
+import ProfileImageEditor from "@/components/ProfileImageEditor";
 import { getCurrentUser } from "@/lib/require-user";
 import { getUserById, listPostsByAuthor, listFriends, areFriends, getFriendRequestBetween } from "@/lib/db";
 import { formatRelativeTime } from "@/lib/time";
@@ -61,11 +62,12 @@ export default async function MemberProfilePage({ params }: Props) {
 
       <section>
         <div className="feature-photo">
-          <figure>
+          <figure style={{ position: "relative" }}>
             <img
               src={profileUser.cover_photo_path || "/images/resources/timeline-1.jpg"}
               alt=""
             />
+            {isOwner && <ProfileImageEditor kind="cover" hasImage={Boolean(profileUser.cover_photo_path)} />}
           </figure>
           <div className="add-btn">
             <span>{friendCount} friend{friendCount === 1 ? "" : "s"}</span>
@@ -91,6 +93,7 @@ export default async function MemberProfilePage({ params }: Props) {
                       src={profileUser.profile_photo_path || "/images/defaults/default-avatar-male.jpg"}
                       alt=""
                     />
+                    {isOwner && <ProfileImageEditor kind="avatar" hasImage={Boolean(profileUser.profile_photo_path)} />}
                   </figure>
                 </div>
               </div>
