@@ -201,7 +201,10 @@ export default function Header() {
             </Link>
           </span>
           <span className="mh-btns-right">
-            <a className="fa fa-sliders" href="#shoppingbag" aria-label="Settings" />
+            {/* Previously href="#shoppingbag" — went nowhere. Same real
+                destination as the new "Customize my page" button in the
+                desktop topbar below: /account-settings#profile. */}
+            <Link className="fa fa-sliders" href="/account-settings#profile" aria-label="Customize my page" />
           </span>
         </div>
         <div className="mh-head second">
@@ -295,6 +298,36 @@ export default function Header() {
             </li>
           </ul>
           <ul className="setting-area" ref={settingAreaRef}>
+            {user && (
+              // Real space in the header for a member (or an admin — "us")
+              // to get to the controls that customize their own page:
+              // name/city/avatar on /profile, via the real Edit Profile
+              // section of /account-settings. Previously this same
+              // destination was only reachable through the "Account
+              // settings" hover-submenu above or the avatar dropdown —
+              // easy to miss. This is a direct, visible link instead.
+              <li style={{ verticalAlign: "middle" }}>
+                <Link
+                  href="/account-settings#profile"
+                  title=""
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    verticalAlign: "middle",
+                    gap: 6,
+                    padding: "6px 14px",
+                    borderRadius: 20,
+                    background: "#088dcd",
+                    color: "#fff",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  <i className="ti-pencil-alt" /> Customize my page
+                </Link>
+              </li>
+            )}
             <li>
               <a
                 href="#"
