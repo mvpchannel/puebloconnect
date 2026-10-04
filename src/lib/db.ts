@@ -485,6 +485,95 @@ function getDb(): DatabaseSync {
       `CREATE INDEX IF NOT EXISTS idx_stream_viewer_sessions_stream ON stream_viewer_sessions(stream_id, left_at)`
     );
 
+    // Pueblo Business Channel — a real profile for a business, replacing
+    // the decorative /admin/locations mockup. A channel's wall reuses the
+    // existing posts table (target_type='business', target_id=<business
+    // id> — already an allowed value in the posts CHECK constraint), the
+    // same pattern groups use for their wall, so no new "business posts"
+    // table is needed. Live/past broadcasts for a channel are just that
+    // business's owner's rows in `streams` (host_id = businesses.owner_id)
+    // — no schema link needed there either.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS businesses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_id INTEGER NOT NULL REFERENCES users(id),
+        name TEXT NOT NULL,
+        slug TEXT UNIQUE NOT NULL,
+        category TEXT NOT NULL DEFAULT '',
+        description TEXT,
+        address TEXT,
+        phone TEXT,
+        website TEXT,
+        hours_text TEXT,
+        logo_path TEXT,
+        cover_photo_path TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_businesses_owner ON businesses(owner_id)`);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS business_followers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_id INTEGER NOT NULL REFERENCES businesses(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(business_id, user_id)
+      )
+    `);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_business_followers_business ON business_followers(business_id)`
+    );
+
+    // One review per user per business (UNIQUE) — posting again updates
+    // the existing row rather than piling up duplicates, same spirit as
+    // togglePostLike's idempotency elsewhere in this file.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS business_reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_id INTEGER NOT NULL REFERENCES businesses(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+        body TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(business_id, user_id)
+      )
+    `);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_business_reviews_business ON business_reviews(business_id)`
+    );
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS business_menu_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_id INTEGER NOT NULL REFERENCES businesses(id),
+        section TEXT NOT NULL DEFAULT 'menu' CHECK (section IN ('menu', 'service')),
+        name TEXT NOT NULL,
+        description TEXT,
+        price_cents INTEGER,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_business_menu_items_business ON business_menu_items(business_id, section, sort_order)`
+    );
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS business_jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_id INTEGER NOT NULL REFERENCES businesses(id),
+        title TEXT NOT NULL,
+        description TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        closed_at TEXT
+      )
+    `);
+    db.exec(
+      `CREATE INDEX IF NOT EXISTS idx_business_jobs_business ON business_jobs(business_id, closed_at)`
+    );
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -2115,6 +2204,46 @@ export function listOpenReportsForStream(streamId: number): (StreamCommentReport
   })[];
 }
 
+// Same shape as listOpenReportsForStream, but across every stream — the
+// site-wide admin moderation queue (one screen instead of having to check
+// each stream's own page). Also carries stream_id/stream_title so the
+// dashboard knows which per-stream resolve endpoint to call for each row.
+export function listAllOpenStreamCommentReports(): (StreamCommentReport & {
+  comment_body: string;
+  comment_author_id: number;
+  comment_author_username: string;
+  reporter_username: string;
+  stream_id: number;
+  stream_title: string;
+})[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT
+         r.id, r.comment_id, r.reporter_id, r.reason, r.created_at,
+         r.resolved_at, r.resolved_by, r.resolution,
+         c.body AS comment_body, c.author_id AS comment_author_id,
+         cu.username AS comment_author_username,
+         ru.username AS reporter_username,
+         s.id AS stream_id, s.title AS stream_title
+       FROM stream_comment_reports r
+       JOIN stream_comments c ON c.id = r.comment_id
+       JOIN streams s ON s.id = c.stream_id
+       JOIN users cu ON cu.id = c.author_id
+       JOIN users ru ON ru.id = r.reporter_id
+       WHERE r.resolved_at IS NULL
+       ORDER BY r.created_at ASC`
+    )
+    .all() as (StreamCommentReport & {
+    comment_body: string;
+    comment_author_id: number;
+    comment_author_username: string;
+    reporter_username: string;
+    stream_id: number;
+    stream_title: string;
+  })[];
+}
+
 // The one moderation action a host/admin takes on a report: dismiss it,
 // delete the offending comment, or ban its author from this stream (which
 // also deletes the comment — a ban without removing what got them banned
@@ -2226,4 +2355,346 @@ export function getTotalViewerSessionCount(streamId: number): number {
     .prepare("SELECT COUNT(*) AS n FROM stream_viewer_sessions WHERE stream_id = ?")
     .get(streamId) as { n: number };
   return row.n;
+}
+
+// ---------------------------------------------------------------------
+// Pueblo Business Channel — a real profile for a business: posts (its
+// "wall", reusing the existing posts table), followers, reviews,
+// menu/services, and job postings. Replaces the decorative
+// /admin/locations and /admin/reviews mockups with real data.
+
+export type Business = {
+  id: number;
+  owner_id: number;
+  name: string;
+  slug: string;
+  category: string;
+  description: string | null;
+  address: string | null;
+  phone: string | null;
+  website: string | null;
+  hours_text: string | null;
+  logo_path: string | null;
+  cover_photo_path: string | null;
+  created_at: string;
+};
+
+export type BusinessWithMeta = Business & {
+  owner_username: string;
+  follower_count: number;
+  post_count: number;
+  review_count: number;
+  average_rating: number | null;
+};
+
+const BUSINESS_SELECT = `
+  SELECT
+    b.id, b.owner_id, b.name, b.slug, b.category, b.description, b.address,
+    b.phone, b.website, b.hours_text, b.logo_path, b.cover_photo_path, b.created_at,
+    u.username AS owner_username,
+    (SELECT COUNT(*) FROM business_followers bf WHERE bf.business_id = b.id) AS follower_count,
+    (SELECT COUNT(*) FROM posts p WHERE p.target_type = 'business' AND p.target_id = b.id AND p.deleted_at IS NULL) AS post_count,
+    (SELECT COUNT(*) FROM business_reviews br WHERE br.business_id = b.id) AS review_count,
+    (SELECT AVG(br.rating) FROM business_reviews br WHERE br.business_id = b.id) AS average_rating
+  FROM businesses b
+  JOIN users u ON u.id = b.owner_id
+`;
+
+function businessSlugify(name: string): string {
+  const base = name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base.length > 0 ? base : "business";
+}
+
+// Appends -2, -3, ... until free, same race-tolerance tradeoff as
+// groups' uniqueSlug — acceptable at this scale.
+function uniqueBusinessSlug(db: DatabaseSync, name: string): string {
+  const base = businessSlugify(name);
+  let candidate = base;
+  let n = 2;
+  while (db.prepare("SELECT id FROM businesses WHERE slug = ?").get(candidate)) {
+    candidate = `${base}-${n}`;
+    n += 1;
+  }
+  return candidate;
+}
+
+export function createBusiness(
+  ownerId: number,
+  name: string,
+  category: string,
+  description: string | null,
+  address: string | null,
+  phone: string | null,
+  website: string | null,
+  hoursText: string | null
+): BusinessWithMeta {
+  const db = getDb();
+  const slug = uniqueBusinessSlug(db, name);
+  const info = db
+    .prepare(
+      `INSERT INTO businesses (owner_id, name, slug, category, description, address, phone, website, hours_text)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(ownerId, name, slug, category, description, address, phone, website, hoursText);
+  return getBusinessById(Number(info.lastInsertRowid))!;
+}
+
+export function getBusinessById(id: number): BusinessWithMeta | undefined {
+  const db = getDb();
+  return db.prepare(`${BUSINESS_SELECT} WHERE b.id = ?`).get(id) as BusinessWithMeta | undefined;
+}
+
+export function getBusinessBySlug(slug: string): BusinessWithMeta | undefined {
+  const db = getDb();
+  return db.prepare(`${BUSINESS_SELECT} WHERE b.slug = ?`).get(slug) as BusinessWithMeta | undefined;
+}
+
+export function listBusinesses(limit = 50): BusinessWithMeta[] {
+  const db = getDb();
+  return db
+    .prepare(`${BUSINESS_SELECT} ORDER BY b.created_at DESC LIMIT ?`)
+    .all(limit) as BusinessWithMeta[];
+}
+
+export function listBusinessesForOwner(ownerId: number): BusinessWithMeta[] {
+  const db = getDb();
+  return db
+    .prepare(`${BUSINESS_SELECT} WHERE b.owner_id = ? ORDER BY b.created_at DESC`)
+    .all(ownerId) as BusinessWithMeta[];
+}
+
+export function isBusinessOwner(businessId: number, userId: number): boolean {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT id FROM businesses WHERE id = ? AND owner_id = ?")
+    .get(businessId, userId);
+  return Boolean(row);
+}
+
+export function updateBusinessProfile(
+  businessId: number,
+  fields: Partial<
+    Pick<
+      Business,
+      "category" | "description" | "address" | "phone" | "website" | "hours_text"
+    >
+  >
+): void {
+  const db = getDb();
+  const keys = Object.keys(fields) as (keyof typeof fields)[];
+  if (keys.length === 0) return;
+  const setClause = keys.map((k) => `${k} = ?`).join(", ");
+  const values = keys.map((k) => fields[k] ?? null);
+  db.prepare(`UPDATE businesses SET ${setClause} WHERE id = ?`).run(...values, businessId);
+}
+
+// Idempotent, same pattern as joinGroup — following a business you
+// already follow is a no-op rather than an error.
+export function followBusiness(businessId: number, userId: number): void {
+  const db = getDb();
+  const existing = db
+    .prepare("SELECT id FROM business_followers WHERE business_id = ? AND user_id = ?")
+    .get(businessId, userId);
+  if (existing) return;
+  db.prepare(
+    "INSERT INTO business_followers (business_id, user_id) VALUES (?, ?)"
+  ).run(businessId, userId);
+}
+
+export function unfollowBusiness(businessId: number, userId: number): void {
+  const db = getDb();
+  db.prepare(
+    "DELETE FROM business_followers WHERE business_id = ? AND user_id = ?"
+  ).run(businessId, userId);
+}
+
+export function isFollowingBusiness(businessId: number, userId: number): boolean {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT id FROM business_followers WHERE business_id = ? AND user_id = ?")
+    .get(businessId, userId);
+  return Boolean(row);
+}
+
+// Businesses a given user follows, newest-followed first — for a "my
+// businesses" list, mirroring listGroupsForUser.
+export function listBusinessesFollowedByUser(userId: number): BusinessWithMeta[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `${BUSINESS_SELECT}
+       JOIN business_followers bf ON bf.business_id = b.id
+       WHERE bf.user_id = ?
+       ORDER BY bf.created_at DESC`
+    )
+    .all(userId) as BusinessWithMeta[];
+}
+
+export type BusinessReviewWithUser = {
+  id: number;
+  business_id: number;
+  user_id: number;
+  rating: number;
+  body: string | null;
+  created_at: string;
+  updated_at: string;
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+  profile_photo_path: string | null;
+};
+
+const BUSINESS_REVIEW_SELECT = `
+  SELECT
+    br.id, br.business_id, br.user_id, br.rating, br.body, br.created_at, br.updated_at,
+    u.username, u.first_name, u.last_name, u.profile_photo_path
+  FROM business_reviews br
+  JOIN users u ON u.id = br.user_id
+`;
+
+// Upsert: posting a second review from the same user replaces the first
+// (ON CONFLICT on the UNIQUE(business_id, user_id) constraint) rather than
+// creating a duplicate — a member's rating of a business is a single
+// opinion they can update, not a log of every time they rated it.
+export function upsertBusinessReview(
+  businessId: number,
+  userId: number,
+  rating: number,
+  body: string | null
+): BusinessReviewWithUser {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO business_reviews (business_id, user_id, rating, body, updated_at)
+     VALUES (?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(business_id, user_id)
+     DO UPDATE SET rating = excluded.rating, body = excluded.body, updated_at = datetime('now')`
+  ).run(businessId, userId, rating, body);
+  return db
+    .prepare(`${BUSINESS_REVIEW_SELECT} WHERE br.business_id = ? AND br.user_id = ?`)
+    .get(businessId, userId) as BusinessReviewWithUser;
+}
+
+export function listBusinessReviews(businessId: number, limit = 100): BusinessReviewWithUser[] {
+  const db = getDb();
+  return db
+    .prepare(`${BUSINESS_REVIEW_SELECT} WHERE br.business_id = ? ORDER BY br.created_at DESC LIMIT ?`)
+    .all(businessId, limit) as BusinessReviewWithUser[];
+}
+
+export function deleteBusinessReview(businessId: number, userId: number): void {
+  const db = getDb();
+  db.prepare(
+    "DELETE FROM business_reviews WHERE business_id = ? AND user_id = ?"
+  ).run(businessId, userId);
+}
+
+export type BusinessMenuItem = {
+  id: number;
+  business_id: number;
+  section: "menu" | "service";
+  name: string;
+  description: string | null;
+  price_cents: number | null;
+  sort_order: number;
+  created_at: string;
+};
+
+export function addBusinessMenuItem(
+  businessId: number,
+  section: "menu" | "service",
+  name: string,
+  description: string | null,
+  priceCents: number | null
+): BusinessMenuItem {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT COALESCE(MAX(sort_order), -1) + 1 AS n FROM business_menu_items WHERE business_id = ?")
+    .get(businessId) as { n: number };
+  const info = db
+    .prepare(
+      `INSERT INTO business_menu_items (business_id, section, name, description, price_cents, sort_order)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(businessId, section, name, description, priceCents, row.n);
+  return db
+    .prepare("SELECT * FROM business_menu_items WHERE id = ?")
+    .get(Number(info.lastInsertRowid)) as BusinessMenuItem;
+}
+
+export function listBusinessMenuItems(businessId: number): BusinessMenuItem[] {
+  const db = getDb();
+  return db
+    .prepare(
+      "SELECT * FROM business_menu_items WHERE business_id = ? ORDER BY section ASC, sort_order ASC"
+    )
+    .all(businessId) as BusinessMenuItem[];
+}
+
+export function deleteBusinessMenuItem(businessId: number, itemId: number): void {
+  const db = getDb();
+  db.prepare("DELETE FROM business_menu_items WHERE id = ? AND business_id = ?").run(
+    itemId,
+    businessId
+  );
+}
+
+export type BusinessJob = {
+  id: number;
+  business_id: number;
+  title: string;
+  description: string | null;
+  created_at: string;
+  closed_at: string | null;
+};
+
+export function createBusinessJob(
+  businessId: number,
+  title: string,
+  description: string | null
+): BusinessJob {
+  const db = getDb();
+  const info = db
+    .prepare("INSERT INTO business_jobs (business_id, title, description) VALUES (?, ?, ?)")
+    .run(businessId, title, description);
+  return db
+    .prepare("SELECT * FROM business_jobs WHERE id = ?")
+    .get(Number(info.lastInsertRowid)) as BusinessJob;
+}
+
+// Open jobs only by default (closed_at IS NULL) — a business's channel
+// page shows what's currently hiring, not its whole job history.
+export function listBusinessJobs(businessId: number, includeClosed = false): BusinessJob[] {
+  const db = getDb();
+  const sql = includeClosed
+    ? "SELECT * FROM business_jobs WHERE business_id = ? ORDER BY created_at DESC"
+    : "SELECT * FROM business_jobs WHERE business_id = ? AND closed_at IS NULL ORDER BY created_at DESC";
+  return db.prepare(sql).all(businessId) as BusinessJob[];
+}
+
+export function closeBusinessJob(businessId: number, jobId: number): void {
+  const db = getDb();
+  db.prepare(
+    "UPDATE business_jobs SET closed_at = datetime('now') WHERE id = ? AND business_id = ? AND closed_at IS NULL"
+  ).run(jobId, businessId);
+}
+
+// A business's live + past broadcasts — just that business owner's rows
+// in `streams`, no schema link needed (see note above createBusiness).
+export function listStreamsForBusiness(
+  businessId: number,
+  viewerId: number | null,
+  limit = 20
+): StreamWithHost[] {
+  const db = getDb();
+  const business = db.prepare("SELECT owner_id FROM businesses WHERE id = ?").get(businessId) as
+    | { owner_id: number }
+    | undefined;
+  if (!business) return [];
+  return db
+    .prepare(`${STREAM_SELECT} WHERE s.host_id = ? ORDER BY s.created_at DESC LIMIT ?`)
+    .all(viewerId ?? 0, business.owner_id, limit) as StreamWithHost[];
 }

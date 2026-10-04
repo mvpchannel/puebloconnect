@@ -38,6 +38,10 @@ export default function Sidebar() {
             <i className="ti-video-camera" />
             <Link href="/live" title="">Pueblo Live</Link>
           </li>
+          <li>
+            <i className="ti-briefcase" />
+            <Link href="/businesses" title="">Business Channels</Link>
+          </li>
         </ul>
       </div>
     </aside>
