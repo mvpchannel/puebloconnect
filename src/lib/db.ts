@@ -574,6 +574,57 @@ function getDb(): DatabaseSync {
       `CREATE INDEX IF NOT EXISTS idx_business_jobs_business ON business_jobs(business_id, closed_at)`
     );
 
+    // Pueblo Events + Check-In. An event's wall reuses the posts table
+    // (target_type='event', target_id=<event id> — same pattern as
+    // groups/businesses), so no separate "event posts" table is needed.
+    // business_id is nullable: an event can exist on its own, or be
+    // hosted/sponsored by a business channel.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        creator_id INTEGER NOT NULL REFERENCES users(id),
+        business_id INTEGER REFERENCES businesses(id),
+        title TEXT NOT NULL,
+        slug TEXT UNIQUE NOT NULL,
+        description TEXT,
+        location_text TEXT,
+        starts_at TEXT NOT NULL,
+        ends_at TEXT,
+        cover_photo_path TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_events_starts_at ON events(starts_at)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_events_business ON events(business_id)`);
+
+    // One RSVP per member per event (UNIQUE) — changing your mind updates
+    // the existing row (going <-> interested) rather than stacking rows.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS event_rsvps (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL REFERENCES events(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        status TEXT NOT NULL CHECK (status IN ('going', 'interested')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(event_id, user_id)
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_event_rsvps_event ON event_rsvps(event_id, status)`);
+
+    // One check-in per member per event — a real-world "I was there",
+    // separate from an RSVP (you can RSVP without attending, or check in
+    // without having RSVP'd first).
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS event_checkins (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER NOT NULL REFERENCES events(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        checked_in_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(event_id, user_id)
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_event_checkins_event ON event_checkins(event_id)`);
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -2697,4 +2748,229 @@ export function listStreamsForBusiness(
   return db
     .prepare(`${STREAM_SELECT} WHERE s.host_id = ? ORDER BY s.created_at DESC LIMIT ?`)
     .all(viewerId ?? 0, business.owner_id, limit) as StreamWithHost[];
+}
+
+// ---------------------------------------------------------------------
+// Pueblo Events + Check-In. RSVP ("going"/"interested"), a real
+// attendance check-in separate from RSVP, and an event wall (reusing the
+// posts table, target_type='event' — same pattern as groups/businesses).
+
+export type Event = {
+  id: number;
+  creator_id: number;
+  business_id: number | null;
+  title: string;
+  slug: string;
+  description: string | null;
+  location_text: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  cover_photo_path: string | null;
+  created_at: string;
+};
+
+export type EventWithMeta = Event & {
+  creator_username: string;
+  business_name: string | null;
+  business_slug: string | null;
+  going_count: number;
+  interested_count: number;
+  checkin_count: number;
+  post_count: number;
+};
+
+const EVENT_SELECT = `
+  SELECT
+    e.id, e.creator_id, e.business_id, e.title, e.slug, e.description,
+    e.location_text, e.starts_at, e.ends_at, e.cover_photo_path, e.created_at,
+    u.username AS creator_username,
+    b.name AS business_name,
+    b.slug AS business_slug,
+    (SELECT COUNT(*) FROM event_rsvps r WHERE r.event_id = e.id AND r.status = 'going') AS going_count,
+    (SELECT COUNT(*) FROM event_rsvps r2 WHERE r2.event_id = e.id AND r2.status = 'interested') AS interested_count,
+    (SELECT COUNT(*) FROM event_checkins c WHERE c.event_id = e.id) AS checkin_count,
+    (SELECT COUNT(*) FROM posts p WHERE p.target_type = 'event' AND p.target_id = e.id AND p.deleted_at IS NULL) AS post_count
+  FROM events e
+  JOIN users u ON u.id = e.creator_id
+  LEFT JOIN businesses b ON b.id = e.business_id
+`;
+
+function eventSlugify(name: string): string {
+  const base = name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return base.length > 0 ? base : "event";
+}
+
+function uniqueEventSlug(db: DatabaseSync, name: string): string {
+  const base = eventSlugify(name);
+  let candidate = base;
+  let n = 2;
+  while (db.prepare("SELECT id FROM events WHERE slug = ?").get(candidate)) {
+    candidate = `${base}-${n}`;
+    n += 1;
+  }
+  return candidate;
+}
+
+export function createEvent(
+  creatorId: number,
+  title: string,
+  description: string | null,
+  locationText: string | null,
+  startsAt: string,
+  endsAt: string | null,
+  businessId: number | null = null
+): EventWithMeta {
+  const db = getDb();
+  const slug = uniqueEventSlug(db, title);
+  const info = db
+    .prepare(
+      `INSERT INTO events (creator_id, business_id, title, slug, description, location_text, starts_at, ends_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(creatorId, businessId, title, slug, description, locationText, startsAt, endsAt);
+  return getEventById(Number(info.lastInsertRowid))!;
+}
+
+export function getEventById(id: number): EventWithMeta | undefined {
+  const db = getDb();
+  return db.prepare(`${EVENT_SELECT} WHERE e.id = ?`).get(id) as EventWithMeta | undefined;
+}
+
+export function getEventBySlug(slug: string): EventWithMeta | undefined {
+  const db = getDb();
+  return db.prepare(`${EVENT_SELECT} WHERE e.slug = ?`).get(slug) as EventWithMeta | undefined;
+}
+
+// Upcoming by default (starts_at in the future or today), soonest first —
+// past events sort newest-first instead, for a "what already happened"
+// view.
+export function listEvents(when: "upcoming" | "past" = "upcoming", limit = 50): EventWithMeta[] {
+  const db = getDb();
+  if (when === "past") {
+    return db
+      .prepare(`${EVENT_SELECT} WHERE e.starts_at < datetime('now') ORDER BY e.starts_at DESC LIMIT ?`)
+      .all(limit) as EventWithMeta[];
+  }
+  return db
+    .prepare(`${EVENT_SELECT} WHERE e.starts_at >= datetime('now') ORDER BY e.starts_at ASC LIMIT ?`)
+    .all(limit) as EventWithMeta[];
+}
+
+export function listEventsForBusiness(businessId: number): EventWithMeta[] {
+  const db = getDb();
+  return db
+    .prepare(`${EVENT_SELECT} WHERE e.business_id = ? ORDER BY e.starts_at DESC`)
+    .all(businessId) as EventWithMeta[];
+}
+
+// Events a user created or RSVP'd to, soonest-first — for a "my events"
+// list, mirroring listGroupsForUser/listBusinessesFollowedByUser.
+export function listEventsForUser(userId: number): EventWithMeta[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `${EVENT_SELECT}
+       WHERE e.creator_id = ? OR e.id IN (SELECT event_id FROM event_rsvps WHERE user_id = ?)
+       ORDER BY e.starts_at ASC`
+    )
+    .all(userId, userId) as EventWithMeta[];
+}
+
+export function isEventCreator(eventId: number, userId: number): boolean {
+  const db = getDb();
+  const row = db.prepare("SELECT id FROM events WHERE id = ? AND creator_id = ?").get(eventId, userId);
+  return Boolean(row);
+}
+
+// Upsert: changing your RSVP (going <-> interested) replaces the
+// existing row rather than adding a second, same upsert pattern as
+// upsertBusinessReview.
+export function rsvpToEvent(eventId: number, userId: number, status: "going" | "interested"): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO event_rsvps (event_id, user_id, status) VALUES (?, ?, ?)
+     ON CONFLICT(event_id, user_id) DO UPDATE SET status = excluded.status`
+  ).run(eventId, userId, status);
+}
+
+export function cancelRsvp(eventId: number, userId: number): void {
+  const db = getDb();
+  db.prepare("DELETE FROM event_rsvps WHERE event_id = ? AND user_id = ?").run(eventId, userId);
+}
+
+export function getRsvpStatus(eventId: number, userId: number): "going" | "interested" | null {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT status FROM event_rsvps WHERE event_id = ? AND user_id = ?")
+    .get(eventId, userId) as { status: "going" | "interested" } | undefined;
+  return row?.status ?? null;
+}
+
+export type EventAttendee = {
+  user_id: number;
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+  profile_photo_path: string | null;
+  status: "going" | "interested";
+};
+
+export function listEventAttendees(eventId: number, limit = 100): EventAttendee[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT u.id AS user_id, u.username, u.first_name, u.last_name, u.profile_photo_path, r.status
+       FROM event_rsvps r
+       JOIN users u ON u.id = r.user_id
+       WHERE r.event_id = ?
+       ORDER BY (r.status = 'going') DESC, r.created_at ASC
+       LIMIT ?`
+    )
+    .all(eventId, limit) as EventAttendee[];
+}
+
+// Idempotent — checking in twice just confirms the first check-in's
+// timestamp rather than erroring, same spirit as joinGroup/followBusiness.
+export function checkInToEvent(eventId: number, userId: number): void {
+  const db = getDb();
+  const existing = db
+    .prepare("SELECT id FROM event_checkins WHERE event_id = ? AND user_id = ?")
+    .get(eventId, userId);
+  if (existing) return;
+  db.prepare("INSERT INTO event_checkins (event_id, user_id) VALUES (?, ?)").run(eventId, userId);
+}
+
+export function isCheckedIn(eventId: number, userId: number): boolean {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT id FROM event_checkins WHERE event_id = ? AND user_id = ?")
+    .get(eventId, userId);
+  return Boolean(row);
+}
+
+export type EventCheckin = {
+  user_id: number;
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+  profile_photo_path: string | null;
+  checked_in_at: string;
+};
+
+export function listEventCheckins(eventId: number, limit = 100): EventCheckin[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT u.id AS user_id, u.username, u.first_name, u.last_name, u.profile_photo_path, c.checked_in_at
+       FROM event_checkins c
+       JOIN users u ON u.id = c.user_id
+       WHERE c.event_id = ?
+       ORDER BY c.checked_in_at ASC
+       LIMIT ?`
+    )
+    .all(eventId, limit) as EventCheckin[];
 }

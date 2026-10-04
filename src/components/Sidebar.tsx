@@ -42,6 +42,10 @@ export default function Sidebar() {
             <i className="ti-briefcase" />
             <Link href="/businesses" title="">Business Channels</Link>
           </li>
+          <li>
+            <i className="ti-calendar" />
+            <Link href="/events" title="">Events</Link>
+          </li>
         </ul>
       </div>
     </aside>

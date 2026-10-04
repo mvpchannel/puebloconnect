@@ -19,6 +19,7 @@ import {
   listBusinessMenuItems,
   listBusinessJobs,
   listStreamsForBusiness,
+  listEventsForBusiness,
 } from "@/lib/db";
 import { formatRelativeTime } from "@/lib/time";
 
@@ -51,6 +52,7 @@ export default async function BusinessChannelPage({
   const menuItems = listBusinessMenuItems(business.id);
   const jobs = listBusinessJobs(business.id);
   const streams = listStreamsForBusiness(business.id, session?.sub ?? null, 5);
+  const events = listEventsForBusiness(business.id);
 
   const shapedReviews = reviews.map((r) => ({
     id: r.id,
@@ -149,6 +151,19 @@ export default async function BusinessChannelPage({
                           {jobs.map((job) => (
                             <li key={job.id}>
                               <span>{job.title}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {events.length > 0 && (
+                      <div className="widget stick-widget" style={{ marginTop: 20 }}>
+                        <h4 className="widget-title">Events</h4>
+                        <ul className="naves">
+                          {events.map((ev) => (
+                            <li key={ev.id}>
+                              <Link href={`/events/${ev.slug}`} title="">{ev.title}</Link>
                             </li>
                           ))}
                         </ul>
