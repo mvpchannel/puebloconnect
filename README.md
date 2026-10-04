@@ -4,31 +4,50 @@ This is the Phase 1 foundation: the static Winku/Pueblo Connect HTML site,
 ported into Next.js (App Router + TypeScript) with shared Header/Footer/
 Sidebar components instead of markup duplicated across 60+ files.
 
-## ⚠️ Not yet build-verified (but the auth system IS runtime-tested)
+## ⚠️ Not yet build-verified (but far more has been checked than that implies)
 
-This code was written in a sandboxed environment where `npm install` is
-blocked (both the public npm registry and an internal mirror returned
-403/401 on every request — not a one-off, a standing restriction). That
-means:
+This code has been written entirely in sandboxed environments where
+`npm install` is blocked — confirmed again as of this check: a direct
+request to `registry.npmjs.org` returns a flat `403` regardless of proxy
+routing, which matches this being a standing restriction on the sandbox's
+outbound IP range, not a one-off or something fixable with proxy/registry
+config. That means:
 
-- Every `.ts`/`.tsx` file **was** syntax-checked (confirms valid
-  TypeScript/JSX, no unclosed tags or structural mistakes) — 87/87 files
-  passed.
-- It has **not** been through an actual `next build`, so TypeScript type
-  errors against the real `next`/`react` type definitions, any remaining
-  import mistakes, or runtime issues can't be ruled out yet.
-- **Exception: the auth/session/database/membership/email logic and the
-  Stripe payment logic were actually run**, not just syntax-checked — see
-  "Auth system" and "Business membership payments" below. All of it needs
-  no `npm install` because it's built entirely on Node's own built-ins
-  plus plain `fetch` calls (Stripe's and Resend's REST APIs — no SDK
+- It has **not** been through an actual `next build`, so anything that
+  only shows up once real `next`/`react`/`three` packages are resolved
+  (their own type definitions, `next build`'s static-export checks,
+  bundler-level issues) can't be fully ruled out from in here.
+- **It HAS been typechecked as a whole project**, not just file-by-file:
+  running `tsc --noEmit -p tsconfig.json` (the project's own real
+  `tsconfig.json`, so the `@/*` path alias resolves exactly like it does
+  in Next) across all 245 `.ts`/`.tsx` files currently in `src/` comes
+  back with **zero real type errors** — the project's own internal code,
+  cross-file types, and `strict: true` checks are all clean. The only
+  diagnostics that print are for packages that don't exist on disk yet
+  (`next`, `react`, `@types/node`, etc. — expected, since `npm install`
+  has never been able to run) and a TS6-vs-TS5.5 `baseUrl` deprecation
+  notice from this sandbox's newer bundled `tsc`, not from this project's
+  own config.
+- Structural Next.js checks that `tsc` wouldn't catch were done by hand
+  across the whole `src/app` tree: every `page.tsx` has a default export,
+  every `route.ts` has a real HTTP-method handler, every component that
+  calls a React hook is marked `"use client"`, and there are no colliding
+  dynamic route segments (e.g. two different `[id]`/`[slug]` folders at
+  the same path level, which fails a real build outright).
+- **The auth/session/database/membership/email logic and the Stripe
+  payment logic were actually run**, not just checked — see "Auth
+  system" and "Business membership payments" below. All of it needs no
+  `npm install` because it's built entirely on Node's own built-ins plus
+  plain `fetch` calls (Stripe's and Resend's REST APIs — no SDK
   packages). The full registration → verify-email → login → forgot-
   password → reset-password chain, plus duplicate email/username, wrong
   password, expired/reused/invalid tokens, and rate limiting, was
   exercised against a real (temporary, isolated) SQLite database by
   importing the actual source files with Node's `--experimental-strip-
-  types` — 41/41 checks passed. See the project's final report for the
-  full list.
+  types` — 41/41 checks passed. Every feature added in later sessions
+  (notifications, Report & Track, Account Settings, the Contact Us
+  backend, and more) followed the same pattern: isolated `node:sqlite`
+  tests against the real `db.ts` functions before committing.
 
 **First thing to do on a machine with working npm access:**
 
