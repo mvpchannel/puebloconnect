@@ -12,7 +12,7 @@ blocked (both the public npm registry and an internal mirror returned
 means:
 
 - Every `.ts`/`.tsx` file **was** syntax-checked (confirms valid
-  TypeScript/JSX, no unclosed tags or structural mistakes) — 63/63 files
+  TypeScript/JSX, no unclosed tags or structural mistakes) — 73/73 files
   passed.
 - It has **not** been through an actual `next build`, so TypeScript type
   errors against the real `next`/`react` type definitions, any remaining
