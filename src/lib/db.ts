@@ -5068,6 +5068,7 @@ export type NeighborhoodReport = {
   category: ReportCategory;
   description: string;
   photo_url: string | null;
+  has_photo: 0 | 1;
   location_text: string | null;
   latitude: number | null;
   longitude: number | null;
@@ -5079,9 +5080,33 @@ export type NeighborhoodReport = {
   follower_count: number;
 };
 
+// Full select, including the real photo_url — a quick-capture photo is
+// stored as a data: URL in that TEXT column (no object storage in this
+// app — see ReportSubmitForm), which can run tens to hundreds of KB.
+// Fine for a single-row fetch (the detail page), but pulling that into
+// every row of a browse/nearby list would bloat those payloads for no
+// reason, so REPORT_LIST_SELECT below swaps in NULL and a cheap
+// has_photo flag instead.
 const REPORT_SELECT = `
   SELECT
-    r.id, r.reporter_id, r.category, r.description, r.photo_url, r.location_text,
+    r.id, r.reporter_id, r.category, r.description, r.photo_url,
+    CASE WHEN r.photo_url IS NOT NULL THEN 1 ELSE 0 END AS has_photo,
+    r.location_text,
+    r.latitude, r.longitude, r.status, r.resolution_note, r.resolved_at,
+    r.created_at, r.updated_at,
+    u.username AS reporter_username,
+    u.first_name AS reporter_first_name,
+    u.last_name AS reporter_last_name,
+    (SELECT COUNT(*) FROM neighborhood_report_followers f WHERE f.report_id = r.id) AS follower_count
+  FROM neighborhood_reports r
+  JOIN users u ON u.id = r.reporter_id
+`;
+
+const REPORT_LIST_SELECT = `
+  SELECT
+    r.id, r.reporter_id, r.category, r.description, NULL AS photo_url,
+    CASE WHEN r.photo_url IS NOT NULL THEN 1 ELSE 0 END AS has_photo,
+    r.location_text,
     r.latitude, r.longitude, r.status, r.resolution_note, r.resolved_at,
     r.created_at, r.updated_at,
     u.username AS reporter_username,
@@ -5156,7 +5181,7 @@ export function listNeighborhoodReports(filters: {
   const limit = Math.min(filters.limit ?? 50, 100);
   args.push(limit);
   return db
-    .prepare(`${REPORT_SELECT} ${where} ORDER BY r.id DESC LIMIT ?`)
+    .prepare(`${REPORT_LIST_SELECT} ${where} ORDER BY r.id DESC LIMIT ?`)
     .all(...args) as NeighborhoodReport[];
 }
 
@@ -5177,7 +5202,7 @@ export function findNearbyNeighborhoodReports(
   const db = getDb();
   const candidates = db
     .prepare(
-      `${REPORT_SELECT}
+      `${REPORT_LIST_SELECT}
        WHERE r.latitude IS NOT NULL AND r.longitude IS NOT NULL
          AND r.status NOT IN ('resolved', 'closed')
          AND r.latitude BETWEEN ? AND ?

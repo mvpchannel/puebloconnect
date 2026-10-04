@@ -27,6 +27,7 @@ export default async function ReportsPage() {
         description: r.description,
         status: r.status,
         createdAt: r.created_at,
+        hasPhoto: Boolean(r.has_photo),
       }))
     : [];
 

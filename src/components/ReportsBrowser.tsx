@@ -12,6 +12,7 @@ type Report = {
   category: ReportCategory;
   description: string;
   photoUrl: string | null;
+  hasPhoto: boolean;
   locationText: string | null;
   status: ReportStatus;
   createdAt: string;
@@ -170,6 +171,13 @@ export default function ReportsBrowser({ isLoggedIn }: { isLoggedIn: boolean }) 
               <div style={{ flex: 1 }}>
                 <h5 style={{ margin: "0 0 4px" }}>
                   {CATEGORY_LABELS[r.category]}
+                  {r.hasPhoto && (
+                    <i
+                      className="fa fa-camera"
+                      title="Includes a photo"
+                      style={{ marginLeft: 8, color: "#999", fontSize: 13, verticalAlign: "middle" }}
+                    />
+                  )}
                   <span
                     style={{
                       marginLeft: 10,

@@ -12,7 +12,14 @@ const VALID_CATEGORIES: ReportCategory[] = ["street_light", "dumped_item", "park
 const VALID_STATUSES: ReportStatus[] = ["submitted", "acknowledged", "in_progress", "resolved", "closed"];
 const MAX_DESCRIPTION_LENGTH = 1000;
 const MAX_LOCATION_TEXT_LENGTH = 200;
-const MAX_PHOTO_URL_LENGTH = 2000;
+// A pasted link is short; a quick-capture photo (ReportSubmitForm
+// compresses to ~1280px JPEG client-side before encoding) comes in as
+// a data: URL that can legitimately run several hundred KB as base64
+// text. No object storage in this app — see the photo_url column
+// comment in db.ts — so this cap exists only to stop an uncompressed
+// multi-megabyte image (or an abusive request) from bloating the
+// database, not to size-limit a normal photo.
+const MAX_PHOTO_URL_LENGTH = 4_000_000;
 
 export function shapeReport(r: NeighborhoodReport) {
   return {
@@ -22,6 +29,7 @@ export function shapeReport(r: NeighborhoodReport) {
     category: r.category,
     description: r.description,
     photoUrl: r.photo_url,
+    hasPhoto: Boolean(r.has_photo),
     locationText: r.location_text,
     latitude: r.latitude,
     longitude: r.longitude,

@@ -21,13 +21,13 @@ export default function ReportsHero() {
           NEIGHBOR-POWERED ACTION
         </span>
         <h2 style={{ color: "#fff", margin: "10px 0 12px", fontSize: 30, lineHeight: 1.25 }}>
-          See something?
+          See something? Say something.
           <br />
           Let&rsquo;s get it fixed.
         </h2>
         <p style={{ color: "#c3cfe6", marginBottom: 20 }}>
-          A streetlight out, a sidewalk hazard, or a park that needs attention — send a quick report to get it on the
-          neighborhood&rsquo;s radar.
+          A streetlight out, a sidewalk hazard, or a park that needs attention — snap a photo or send a quick report
+          to get it on the neighborhood&rsquo;s radar.
         </p>
         <a
           href="#report-form"

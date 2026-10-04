@@ -6,6 +6,7 @@ type MiniReport = {
   description: string;
   status: string;
   createdAt: string;
+  hasPhoto: boolean;
 };
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -101,6 +102,9 @@ export default function ReportsDashboard({
                 >
                   <span>
                     <strong>{CATEGORY_LABELS[r.category] || r.category}</strong>
+                    {r.hasPhoto && (
+                      <i className="fa fa-camera" title="Includes a photo" style={{ marginLeft: 6, color: "#bbb", fontSize: 12 }} />
+                    )}
                     <span style={{ color: "#999", marginLeft: 8, fontSize: 12.5 }}>{r.description.slice(0, 60)}</span>
                   </span>
                   <span style={{ fontSize: 11, fontWeight: "bold", color: STATUS_LABELS[r.status]?.color }}>
