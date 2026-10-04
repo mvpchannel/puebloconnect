@@ -640,7 +640,7 @@ export default function StreamWatchClient({
 
   return (
     <div>
-      <div className="central-meta item">
+      <div className="central-meta item" style={{ overflow: "hidden" }}>
         <div style={{ position: "relative", paddingBottom: "56.25%", background: "#000" }}>
           <iframe
             src={embedSrc}
@@ -649,6 +649,71 @@ export default function StreamWatchClient({
             allowFullScreen
             style={{ position: "absolute", top: 0, left: 0, width: "100%", height: "100%", border: 0 }}
           />
+
+          {/* Dynamic header/status overlay — LIVE badge + viewer count,
+              always visible over the player itself. */}
+          <div
+            style={{
+              position: "absolute",
+              top: 12,
+              left: 12,
+              display: "flex",
+              gap: 8,
+              zIndex: 2,
+              pointerEvents: "none",
+            }}
+          >
+            {status === "live" && (
+              <span
+                style={{
+                  background: "#e02020",
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: "bold",
+                  letterSpacing: 0.5,
+                  padding: "4px 10px",
+                  borderRadius: 3,
+                }}
+              >
+                ● LIVE
+              </span>
+            )}
+            {status === "ended" && (
+              <span
+                style={{
+                  background: "rgba(0,0,0,0.6)",
+                  color: "#fff",
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: "4px 10px",
+                  borderRadius: 3,
+                }}
+              >
+                REPLAY
+              </span>
+            )}
+          </div>
+          {status === "live" && liveViewerCount !== null && (
+            <div
+              style={{
+                position: "absolute",
+                top: 12,
+                right: 12,
+                background: "rgba(0,0,0,0.6)",
+                color: "#fff",
+                fontSize: 12,
+                fontWeight: 600,
+                padding: "4px 10px",
+                borderRadius: 3,
+                zIndex: 2,
+                pointerEvents: "none",
+              }}
+            >
+              <i className="fa fa-eye" style={{ marginRight: 6 }} />
+              {liveViewerCount} watching
+            </div>
+          )}
+
           {/* Floating reactions layer */}
           <div
             style={{
@@ -682,13 +747,23 @@ export default function StreamWatchClient({
           `}</style>
         </div>
 
-        <div style={{ padding: "12px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+        <div
+          style={{
+            padding: "10px 20px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+            gap: 8,
+            borderBottom: "1px solid #f0f0f0",
+          }}
+        >
           <div>
-            {status === "live" && liveViewerCount !== null && (
-              <span style={{ color: "#555" }}>{liveViewerCount} watching now</span>
-            )}
             {status === "ended" && initialTotalViewCount !== null && (
-              <span style={{ color: "#555" }}>{initialTotalViewCount} views</span>
+              <span style={{ color: "#999", fontSize: 13 }}>
+                <i className="fa fa-eye" style={{ marginRight: 6 }} />
+                {initialTotalViewCount} views
+              </span>
             )}
           </div>
 
@@ -701,7 +776,7 @@ export default function StreamWatchClient({
                   onClick={() => sendReaction(emoji)}
                   title={emoji}
                   style={{
-                    background: "none",
+                    background: "#f7f7f7",
                     border: "1px solid #eee",
                     borderRadius: 20,
                     padding: "4px 10px",
@@ -715,7 +790,7 @@ export default function StreamWatchClient({
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {isHost && status === "scheduled" && (
               <button className="mtr-btn signup" type="button" onClick={goLive}>
                 <span>Go Live</span>
@@ -739,9 +814,19 @@ export default function StreamWatchClient({
             <button
               type="button"
               onClick={toggleLike}
-              style={{ cursor: "pointer", background: "none", border: "none" }}
+              style={{
+                cursor: "pointer",
+                background: liked ? "#fdecea" : "#f7f7f7",
+                border: "1px solid #eee",
+                borderRadius: 20,
+                padding: "5px 12px",
+                color: liked ? "#e02020" : "#555",
+                fontSize: 13,
+                fontWeight: 600,
+              }}
             >
-              <i className={liked ? "fa fa-heart" : "ti-heart"} /> {likeCount}
+              <i className={liked ? "fa fa-heart" : "ti-heart"} style={{ marginRight: 6 }} />
+              {likeCount}
             </button>
           </div>
         </div>
@@ -1088,40 +1173,91 @@ export default function StreamWatchClient({
       )}
 
       <div className="central-meta item">
-        <div style={{ padding: 20 }}>
-          <h4 style={{ marginBottom: 12 }}>Chat</h4>
-          <div style={{ maxHeight: 300, overflowY: "auto", marginBottom: 12 }}>
+        <div style={{ padding: "16px 20px 20px" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginBottom: 12,
+            }}
+          >
+            <h4 style={{ margin: 0 }}>Chat</h4>
+            {status === "live" && liveViewerCount !== null && (
+              <span style={{ fontSize: 12.5, color: "#555" }}>
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: "#2a8f2a",
+                    marginRight: 6,
+                  }}
+                />
+                {liveViewerCount} watching
+              </span>
+            )}
+          </div>
+          <div style={{ maxHeight: 320, overflowY: "auto", marginBottom: 12 }}>
             {comments.length === 0 && <p style={{ color: "#888" }}>No messages yet.</p>}
             {comments.map((c) => (
-              <div key={c.id} style={{ padding: "4px 0", display: "flex", justifyContent: "space-between" }}>
-                <span>
-                  <strong>{c.authorName}</strong>
-                  {c.authorBadges?.map((b) => (
-                    <span
-                      key={b}
-                      style={{
-                        fontSize: 10,
-                        background: "#1877d1",
-                        color: "#fff",
-                        borderRadius: 3,
-                        padding: "1px 5px",
-                        marginLeft: 5,
-                      }}
-                    >
-                      {b}
-                    </span>
-                  ))}
-                  : {c.body}
+              <div key={c.id} style={{ display: "flex", gap: 10, padding: "7px 0" }}>
+                <span
+                  aria-hidden
+                  style={{
+                    flexShrink: 0,
+                    width: 28,
+                    height: 28,
+                    borderRadius: "50%",
+                    background: avatarColor(c.authorId),
+                    color: "#fff",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {c.authorName.slice(0, 1).toUpperCase()}
                 </span>
-                {isLoggedIn && (
-                  <button
-                    type="button"
-                    onClick={() => reportComment(c.id)}
-                    style={{ background: "none", border: "none", color: "#999", fontSize: 12, cursor: "pointer" }}
-                  >
-                    report
-                  </button>
-                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div>
+                    <strong style={{ fontSize: 13.5 }}>{c.authorName}</strong>
+                    {c.authorBadges?.map((b) => (
+                      <span
+                        key={b}
+                        style={{
+                          fontSize: 10,
+                          background: "#1877d1",
+                          color: "#fff",
+                          borderRadius: 3,
+                          padding: "1px 5px",
+                          marginLeft: 5,
+                        }}
+                      >
+                        {b}
+                      </span>
+                    ))}
+                    {isLoggedIn && (
+                      <button
+                        type="button"
+                        onClick={() => reportComment(c.id)}
+                        style={{
+                          float: "right",
+                          background: "none",
+                          border: "none",
+                          color: "#bbb",
+                          fontSize: 11,
+                          cursor: "pointer",
+                        }}
+                      >
+                        report
+                      </button>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 13.5, color: "#333" }}>{c.body}</span>
+                </div>
               </div>
             ))}
           </div>
@@ -1132,7 +1268,7 @@ export default function StreamWatchClient({
               onChange={(e) => setCommentText(e.target.value)}
               placeholder={isLoggedIn ? "Say something…" : "Log in to chat"}
               disabled={!isLoggedIn}
-              style={{ flex: 1, padding: "8px 12px", border: "1px solid #ddd", borderRadius: 4 }}
+              style={{ flex: 1, padding: "8px 12px", border: "1px solid #ddd", borderRadius: 20 }}
             />
             <button className="mtr-btn signup" type="submit" disabled={!isLoggedIn || !commentText.trim()}>
               <span>Send</span>
@@ -1142,4 +1278,9 @@ export default function StreamWatchClient({
       </div>
     </div>
   );
+}
+
+const AVATAR_COLORS = ["#1877d1", "#2a8f2a", "#c0392b", "#8e44ad", "#c97600", "#16a085"];
+function avatarColor(authorId: number) {
+  return AVATAR_COLORS[authorId % AVATAR_COLORS.length];
 }

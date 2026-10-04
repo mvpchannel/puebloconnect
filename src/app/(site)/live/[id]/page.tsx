@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import Sidebar from "@/components/Sidebar";
 import StreamWatchClient from "@/components/StreamWatchClient";
 import PassportVisitBeacon from "@/components/PassportVisitBeacon";
+import PuebloLiveHero from "@/components/PuebloLiveHero";
 import { getCurrentUser } from "@/lib/require-user";
 import {
   getStreamById,
@@ -19,6 +20,7 @@ import {
   hasClaimedStreamFlashDrop,
   listBusinessesForOwner,
   listAllDealsForBusiness,
+  listStreams,
 } from "@/lib/db";
 import { toEmbedSrc } from "@/lib/stream-embed";
 
@@ -109,17 +111,25 @@ export default async function StreamDetailPage({
                 <Sidebar />
               </div>
               <div className="col-lg-9">
+                <PuebloLiveHero liveCount={listStreams("live", null).length} />
                 <PassportVisitBeacon
                   isLoggedIn={Boolean(session)}
                   category="pueblo_live"
                   refId={stream.id}
                   label={`Watched ${stream.title}`}
                 />
-                <h3 style={{ marginBottom: 4 }}>{stream.title}</h3>
-                <p style={{ color: "#888", marginBottom: 16 }}>
-                  Hosted by {[stream.host_first_name, stream.host_last_name].filter(Boolean).join(" ") || stream.host_username}
-                  {stream.description ? ` — ${stream.description}` : ""}
-                </p>
+                <div className="central-meta item" style={{ padding: "16px 20px 4px" }}>
+                  <h3 style={{ margin: "0 0 6px" }}>{stream.title}</h3>
+                  <p style={{ color: "#888", margin: 0 }}>
+                    <img
+                      src={stream.host_profile_photo_path || "/images/defaults/default-avatar-male.jpg"}
+                      alt=""
+                      style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover", verticalAlign: "middle", marginRight: 8 }}
+                    />
+                    Hosted by {[stream.host_first_name, stream.host_last_name].filter(Boolean).join(" ") || stream.host_username}
+                    {stream.description ? ` — ${stream.description}` : ""}
+                  </p>
+                </div>
                 <StreamWatchClient
                   streamId={stream.id}
                   embedSrc={embedSrc}

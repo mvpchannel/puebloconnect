@@ -4,7 +4,9 @@ import Footer from "@/components/Footer";
 import Sidebar from "@/components/Sidebar";
 import StreamCreateForm from "@/components/StreamCreateForm";
 import StreamsBrowser from "@/components/StreamsBrowser";
+import PuebloLiveHero from "@/components/PuebloLiveHero";
 import { getCurrentUser } from "@/lib/require-user";
+import { listStreams } from "@/lib/db";
 
 export const metadata: Metadata = {
   title: "Pueblo Live",
@@ -15,6 +17,7 @@ export const metadata: Metadata = {
 // Bring-your-own-stream — see StreamCreateForm for the embedUrl model.
 export default async function LivePage() {
   const session = await getCurrentUser();
+  const liveCount = listStreams("live", null).length;
 
   return (
     <>
@@ -27,7 +30,7 @@ export default async function LivePage() {
                 <Sidebar />
               </div>
               <div className="col-lg-9">
-                <h3 style={{ marginBottom: 16 }}>Pueblo Live</h3>
+                <PuebloLiveHero liveCount={liveCount} />
                 {session && <StreamCreateForm />}
                 <StreamsBrowser isLoggedIn={Boolean(session)} />
               </div>

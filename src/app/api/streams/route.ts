@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
-import { createStream, listStreams, StreamPlatform, StreamStatus, StreamWithHost } from "@/lib/db";
+import { createStream, listStreams, getLiveViewerCount, StreamPlatform, StreamStatus, StreamWithHost } from "@/lib/db";
 
 const VALID_PLATFORMS: StreamPlatform[] = ["youtube", "facebook", "vimeo"];
 const VALID_STATUSES: StreamStatus[] = ["scheduled", "live", "ended"];
@@ -23,6 +23,9 @@ function shapeStream(s: StreamWithHost) {
     startedAt: s.started_at,
     endedAt: s.ended_at,
     peakViewerCount: s.peak_viewer_count,
+    // Only meaningful while live — getLiveViewerCount counts recent
+    // heartbeats, so it's 0/irrelevant for a scheduled or ended stream.
+    liveViewerCount: s.status === "live" ? getLiveViewerCount(s.id) : null,
     createdAt: s.created_at,
     likeCount: s.like_count,
     commentCount: s.comment_count,
