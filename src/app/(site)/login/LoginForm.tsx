@@ -2,6 +2,7 @@
 
 import { useState, FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 
 /**
  * Ported from landing.html. The sign-in/register panel swap was originally
@@ -20,7 +21,10 @@ function LoginForm() {
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get("from") || "/newsfeed";
 
-  const [showRegister, setShowRegister] = useState(false);
+  // Lets a link (e.g. the landing page's "Join Pueblo Connect" button)
+  // deep-link straight into the register panel with /login?register=1,
+  // instead of always landing on Login first.
+  const [showRegister, setShowRegister] = useState(searchParams.get("register") === "1");
 
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -140,7 +144,7 @@ function LoginForm() {
               <h2 className="log-title">Login</h2>
               <p>
                 Don&rsquo;t use Pueblo Connect yet?{" "}
-                <a href="#" title="">Take the tour</a> or{" "}
+                <Link href="/" title="">Take the tour</Link> or{" "}
                 <a
                   href="#"
                   title=""
@@ -212,7 +216,7 @@ function LoginForm() {
               <h2 className="log-title">Register</h2>
               <p>
                 Don&rsquo;t use Pueblo Connect yet?{" "}
-                <a href="#" title="">Take the tour</a> or{" "}
+                <Link href="/" title="">Take the tour</Link> or{" "}
                 <a
                   href="#"
                   title=""
