@@ -275,6 +275,17 @@ button,
     font-weight: bold;
     line-height: 25px;
 }
+/* The logo artwork is a 535x217 two-line lockup with no height cap here,
+   so it rendered at full size and inflated .top-bar (a position:fixed bar
+   that .panel-layout's 106px top padding is built to clear) to roughly
+   250px tall, pushing it over the page content beneath it. Capping the
+   image keeps it inside the bar's intended ~106px height. */
+.logo > a > img {
+    display: block;
+    max-height: 70px;
+    width: auto;
+    max-width: 100%;
+}
 .logo > a > i {
     color: #ff5f5f;
     float: left;

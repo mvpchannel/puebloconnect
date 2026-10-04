@@ -676,6 +676,31 @@ header.sticky {
     z-index: 10;
 }
 
+/* The header logo artwork is a wide two-line lockup ("PUEBLO" / "CONNECT")
+   at a fixed 535x217 (~2.47:1) source size. Left unconstrained, it renders
+   taller than the 60px .topbar and spills out underneath it (visible as
+   "CONNECT" overlapping whatever content follows the header). .topbar's
+   60px height is relied on elsewhere (.side-panel's top offset, the
+   sticky-header JS), so the fix is to cap the logo to fit the existing
+   header rather than grow the header around the logo. */
+.topbar .logo {
+    display: inline-flex;
+    align-items: center;
+    height: 60px;
+}
+
+.topbar .logo > a {
+    display: inline-flex;
+    align-items: center;
+    height: 100%;
+}
+
+.topbar .logo img {
+    max-height: 46px;
+    width: auto;
+    max-width: 100%;
+}
+
 .topbar > form {
     display: inline-block;
     vertical-align: sub;
@@ -4732,6 +4757,9 @@ canvas {
 .mh-text img {
     display: inline-block;
     vertical-align: sub;
+    max-height: 32px;
+    width: auto;
+    max-width: 100%;
 }
 
 .mh-head .mh-form {
