@@ -1,200 +1,54 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
+import { verifySession, SESSION_COOKIE_NAME } from "@/lib/session";
+import { listConversations } from "@/lib/db";
+import AdminInboxClient from "./AdminInboxClient";
 
 export const metadata: Metadata = {
   title: "Inbox",
 };
 
 /**
- * Ported from winku admin/inbox.html (shared top-bar/sidebar now live in
- * AdminChrome via admin/layout.tsx, which also gates this whole route
- * through src/middleware.ts — role: admin required).
+ * Ported from winku admin/inbox.html. Previously STATUS: visual port of the
+ * vendor demo UI only — a hardcoded "My Friends List" of 8 invented people
+ * and a single fake "Bob Frank" conversation, plus a profile-banner header
+ * with fabricated follower/project counts and sample notification dropdowns.
  *
- * STATUS: visual port of the vendor demo UI only — no real data or backend
- * behind it yet (tables/cards below show the original template's sample
- * content). Buttons/links that were decorative in the original (no href,
- * `href="#"`) are left as-is rather than wired to fake handlers. See
- * FUNCTIONALITY_STATUS.md for the page-by-page backend work still needed.
+ * STATUS: real. An admin account is just a `users` row with role='admin'
+ * (see src/middleware.ts, which already gates this whole route), so it has
+ * real conversations in the same `messages` table the member-facing
+ * /messages page reads — see src/app/(site)/messages/page.tsx and
+ * MessagesClient.tsx, which AdminInboxClient mirrors. This page fetches that
+ * admin's real conversations server-side with listConversations() (same
+ * function the member page uses) and renders them with the admin theme's
+ * own chat classes (client-list / chat-msgs / cht-bdy / chat-message —
+ * confirmed styled in public/admin-assets/css/main-style.css and color.css)
+ * instead of the member site's CSS, since the two stacks are loaded
+ * separately per-section (src/app/(site)/layout.tsx vs src/app/admin/layout.tsx)
+ * and mixing them breaks styling.
+ *
+ * The fake profile-banner chrome (follower/project/following counts,
+ * notification-dropdown samples) is dropped rather than ported, since
+ * fabricated numbers sitting next to now-real data would be dishonest; the
+ * page gets a plain heading instead, matching src/app/admin/users/page.tsx.
  */
 export default function Page() {
-  return (
-    <>
+  const token = cookies().get(SESSION_COOKIE_NAME)?.value;
+  const session = token ? verifySession(token) : null;
+  // middleware.ts already guarantees a non-null admin session before this
+  // page renders; -1 is an unreachable fallback to satisfy the type.
+  const currentUserId = session?.sub ?? -1;
+  const conversations = listConversations(currentUserId);
 
+  return (
     <div className="row">
       <div className="col-md-12">
-        <div className="profile-sec">
-          <div className="profile-banner-sec">
-            <ul>
-              <li>
-                <input accept="image/*" type="file" name="file-1[]" id="file-1" className="new-img inputfile inputfile-1" data-multiple-caption="{count} files selected" multiple />
-                <label htmlFor="file-1"><i className="fa fa-picture-o"></i><span>Choose a file</span></label>
-              </li>
-              <li><a href="/admin/edit-profile" title=""><i className="fa fa-pencil"></i> Edit Profile</a></li>
-            </ul>
-            <img src="/admin-assets/images/resource/banner.jpg" alt="" /> </div>
-          <div className="user-bar">
-            <div className="user-thumb"> <img src="/admin-assets/images/resource/admin.jpg" alt="" /> </div>
-            <a title="" className="purple-skin"><i className="fa fa-heart-o"></i> Follow</a>
-            <ul>
-              <li> 1,245 <span>Followers</span> </li>
-              <li> 535 <span>Projects</span> </li>
-              <li> 994 <span>Following</span> </li>
-            </ul>
-            <div className="notif"> <span><img src="/admin-assets/images/icon-bell.png" alt=""/><i>3</i></span>
-              <div className="noti-lst">
-                <div className="noti-tp"> <span>Notifications</span> </div>
-                <div className="noti-bd">
-                  <ul>
-                    <li className="rd-noti"><a href="#" title=""><strong>Alexander</strong></a> Liked <a href="#" title="">Zebra Styling Of Activity Feed Items</a> with <a href="#" title="">Css3 I BP Triks.</a> <span>15 Min Ago</span> <i>Read</i></li>
-                    <li className="unrd-noti"><a href="#" title=""><strong>BuddyPress</strong> Using Dropbox To Host Your On WordPress Theme! BP-Tricks</a> <span>30 Min Ago</span> <i>Unread</i></li>
-                    <li className="unrd-noti"><a href="#" title=""><strong>BP-Tricks:</strong> Sharing BuddyPress Knowledge made eassy!</a> <span>12 Hours Ago</span> <i>Unread</i></li>
-                    <li className="unrd-noti"><a href="#" title=""><strong>Alexander</strong></a> Liked <a href="#" title="">Zebra Styling Of Activity Feed Items</a> with <a href="#" title="">Css3 I BP Triks.</a> <span>19 Hours Ago</span> <i>Unread</i></li>
-                  </ul>
-                </div>
-                <div className="noti-bt"> <a href="#" title="">View All Notification</a> </div>
-              </div>
-            </div>
-            <div className="notif"> <span><img src="/admin-assets/images/icon-envelop.png" alt=""/><i>3</i></span>
-              <div className="noti-lst">
-                <div className="noti-tp"> <span>Notifications</span> </div>
-                <div className="noti-bd">
-                  <ul>
-                    <li className="rd-noti"><a href="#" title=""><strong>Alexander</strong></a> Liked <a href="#" title="">Zebra Styling Of Activity Feed Items</a> with <a href="#" title="">Css3 I BP Triks.</a> <span>15 Min Ago</span> <i>Read</i></li>
-                    <li className="unrd-noti"><a href="#" title=""><strong>BuddyPress</strong> Using Dropbox To Host Your On WordPress Theme! BP-Tricks</a> <span>30 Min Ago</span> <i>Unread</i></li>
-                    <li className="unrd-noti"><a href="#" title=""><strong>BP-Tricks:</strong> Sharing BuddyPress Knowledge made eassy!</a> <span>12 Hours Ago</span> <i>Unread</i></li>
-                    <li className="unrd-noti"><a href="#" title=""><strong>Alexander</strong></a> Liked <a href="#" title="">Zebra Styling Of Activity Feed Items</a> with <a href="#" title="">Css3 I BP Triks.</a> <span>19 Hours Ago</span> <i>Unread</i></li>
-                  </ul>
-                </div>
-                <div className="noti-bt"> <a href="#" title="">View All Notification</a> </div>
-              </div>
-            </div>
-            <div className="social-btns">
-              <ul>
-                <li><a href="#" title="Facebook" aria-label="Facebook"><i className="fa fa-facebook"></i></a></li>
-                <li><a href="#" title="Twitter" aria-label="Twitter"><i className="fa fa-twitter"></i></a></li>
-                <li><a href="#" title="Google+" aria-label="Google+"><i className="fa fa-google-plus"></i></a></li>
-              </ul>
-            </div>
-          </div>
-          <div className="profile-all">
-            <div className="row mrg1">
-              <div className="col-md-4">
-                <div className="sidebar" id="sidebar2">
-                  <div className="widget">
-                    <div className="our-clients-sec">
-                      <div className="widget-title">
-                        <h3>My Friends List</h3>
-                        <span>You have 522 Freinds</span> </div>
-                      <div id="searchDir"></div>
-                      <ul id="people-list" className="client-list">
-                        <li> <span className="user-status online red-skin">J</span>
-                          <div className="client-info">
-                            <h3><a href="#" title="">Jamed line</a></h3>
-                            <p>creative designer</p>
-                          </div>
-                        </li>
-                        <li> <span className="user-status offline purple-skin">H</span>
-                          <div className="client-info">
-                            <h3><a href="#" title="">Hurisa joe</a></h3>
-                            <p>marketing</p>
-                          </div>
-                        </li>
-                        <li> <span className="user-status away pink-skin">K</span>
-                          <div className="client-info">
-                            <h3><a href="#" title="">Komail set</a></h3>
-                            <p>supervisor</p>
-                          </div>
-                        </li>
-                        <li> <span className="user-status away sky-skin">B</span>
-                          <div className="client-info">
-                            <h3><a href="#" title="">Bason Durel</a></h3>
-                            <p>web developer</p>
-                          </div>
-                        </li>
-                        <li> <span className="user-status offline red-skin">D</span>
-                          <div className="client-info">
-                            <h3><a href="#" title="">Danzil Dare</a></h3>
-                            <p>software engineer</p>
-                          </div>
-                        </li>
-                        <li> <span className="user-status online purple-skin">Z</span>
-                          <div className="client-info">
-                            <h3><a href="#" title="">Zubain Dui</a></h3>
-                            <p>road master</p>
-                          </div>
-                        </li>
-                        <li> <span className="user-status online pink-skin">L</span>
-                          <div className="client-info">
-                            <h3><a href="#" title="">Lara Croft</a></h3>
-                            <p>content writer</p>
-                          </div>
-                        </li>
-                        <li> <span className="user-status offline sky-skin">B</span>
-                          <div className="client-info">
-                            <h3><a href="#" title="">Bisman Dazy</a></h3>
-                            <p>blogger</p>
-                          </div>
-                        </li>
-                      </ul>
-                    </div>
-                    {/* Our Clients Sec */} 
-                  </div>
-                  {/* Widget */} 
-                </div>
-              </div>
-              <div className="col-md-8">
-                <div className="chat-msgs widget">
-                  <div className="chat-system-innr">
-                    <div className="chat-hdr">
-                      <div className="cht-tl">
-                        <h3 className="user-status online">Bob Frank</h3>
-                        <span>Web Coder</span> </div>
-                      <ul className="cht-optns">
-                        <li><a href="#" title=""><i className="fa fa-user"></i></a></li>
-                        <li><a href="#" title=""><i className="fa fa-video-camera"></i></a></li>
-                        <li><a href="#" title=""><i className="fa fa-gear"></i></a></li>
-                      </ul>
-                    </div>
-                    <div className="cht-bdy">
-                      <ul>
-                        <li className="chat-message frnd"> <span className="sndr-nm"><img src="/admin-assets/images/resource/frnd-1.jpg" alt=""/></span>
-                          <div className="msg-bx">Hello</div>
-                        </li>
-                        <li className="chat-message me"> <span className="sndr-nm"><img src="/admin-assets/images/resource/frnd-1.jpg" alt=""/></span>
-                          <div className="msg-bx">Hello</div>
-                        </li>
-                        <li className="chat-message me"> <span className="sndr-nm"><img src="/admin-assets/images/resource/frnd-1.jpg" alt=""/></span>
-                          <div className="msg-bx">How are you?</div>
-                        </li>
-                        <li className="chat-message frnd"> <span className="sndr-nm"><img src="/admin-assets/images/resource/frnd-1.jpg" alt=""/></span>
-                          <div className="msg-bx">Please type something on the field below I am fine. Please something on the field.</div>
-                        </li>
-                      </ul>
-                      <div className="comment-form">
-                        <form>
-                          <textarea placeholder="Write Somthing..."></textarea>
-                          <a href="#" title=""><i className="flaticon-smile"></i></a>
-                        </form>
-                        <span> <i className="fa fa-paperclip"></i>
-                        <label className="fileContainer"> Add Files
-                          <input type="file"/>
-                        </label>
-                        </span> <span> <i className="fa fa-photo"></i>
-                        <label className="fileContainer"> Add Photos
-                          <input type="file"/>
-                        </label>
-                        </span> <a href="#" title="" className="purple-skin">Send</a> </div>
-                    </div>
-                  </div>
-                </div>
-                {/* Chat Messages */} 
-              </div>
-            </div>
-          </div>
+        <div className="widget-title" style={{ marginBottom: 20 }}>
+          <h3>Inbox</h3>
+          <span>Real conversations for this admin account</span>
         </div>
-        {/* Profile Sec */} 
+        <AdminInboxClient currentUserId={currentUserId} initialConversations={conversations} />
       </div>
     </div>
-  
-    </>
   );
 }
