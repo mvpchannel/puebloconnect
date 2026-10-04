@@ -226,6 +226,10 @@ function getDb(): DatabaseSync {
     db.exec(
       `CREATE INDEX IF NOT EXISTS idx_posts_target ON posts(target_type, target_id, created_at)`
     );
+    // Photo posts: additive migration for databases created before photos existed.
+    if (!columnExists(db, "posts", "image_path")) {
+      db.exec("ALTER TABLE posts ADD COLUMN image_path TEXT");
+    }
 
     db.exec(`
       CREATE TABLE IF NOT EXISTS post_likes (
@@ -1733,6 +1737,7 @@ export type PostWithAuthor = {
   author_last_name: string | null;
   author_profile_photo_path: string | null;
   body: string;
+  image_path: string | null;
   target_type: TargetType;
   target_id: number | null;
   created_at: string;
@@ -1745,7 +1750,7 @@ export type PostWithAuthor = {
 
 const POST_SELECT = `
   SELECT
-    p.id, p.author_id, p.body, p.target_type, p.target_id, p.created_at,
+    p.id, p.author_id, p.body, p.image_path, p.target_type, p.target_id, p.created_at,
     u.username AS author_username,
     u.first_name AS author_first_name,
     u.last_name AS author_last_name,
@@ -1761,14 +1766,15 @@ export function createPost(
   authorId: number,
   body: string,
   targetType: TargetType = "feed",
-  targetId: number | null = null
+  targetId: number | null = null,
+  imagePath: string | null = null
 ): PostWithAuthor {
   const db = getDb();
   const info = db
     .prepare(
-      `INSERT INTO posts (author_id, body, target_type, target_id) VALUES (?, ?, ?, ?)`
+      `INSERT INTO posts (author_id, body, target_type, target_id, image_path) VALUES (?, ?, ?, ?, ?)`
     )
-    .run(authorId, body, targetType, targetId);
+    .run(authorId, body, targetType, targetId, imagePath);
   const postId = Number(info.lastInsertRowid);
   awardPoints(authorId, "post", `post:${postId}`, POINT_VALUES.post);
   return getPostById(postId, authorId)!;
@@ -1816,7 +1822,7 @@ export function listFeedPosts(viewerId: number | null, limit = 30): FeedPost[] {
   return db
     .prepare(
       `SELECT
-         p.id, p.author_id, p.body, p.target_type, p.target_id, p.created_at,
+         p.id, p.author_id, p.body, p.image_path, p.target_type, p.target_id, p.created_at,
          u.username AS author_username,
          u.first_name AS author_first_name,
          u.last_name AS author_last_name,

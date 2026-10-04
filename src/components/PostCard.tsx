@@ -10,6 +10,7 @@ type PostCardProps = {
   authorImage: string;
   publishedLabel: string;
   text: string;
+  imageSrc?: string | null;
   initialLikeCount?: number;
   initialLiked?: boolean;
   initialCommentCount?: number;
@@ -45,6 +46,7 @@ export default function PostCard({
   authorImage,
   publishedLabel,
   text,
+  imageSrc = null,
   initialLikeCount = 0,
   initialLiked = false,
   initialCommentCount = 0,
@@ -228,7 +230,14 @@ export default function PostCard({
           )}
           <div className="post-meta">
             <div className="description">
-              <p>{text}</p>
+              {text && <p>{text}</p>}
+              {imageSrc && (
+                <img
+                  src={imageSrc}
+                  alt=""
+                  style={{ width: "100%", maxHeight: 560, objectFit: "cover", borderRadius: 6, marginTop: 8 }}
+                />
+              )}
             </div>
             {error && (
               <div style={{ color: "#c0392b", fontSize: "13px", margin: "4px 0" }}>{error}</div>

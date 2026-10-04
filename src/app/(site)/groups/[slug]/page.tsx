@@ -157,6 +157,7 @@ export default async function GroupDetailPage({
                           }
                           publishedLabel={formatRelativeTime(post.created_at)}
                           text={post.body}
+                          imageSrc={post.image_path}
                           initialLikeCount={post.like_count}
                           initialLiked={Boolean(post.liked_by_viewer)}
                           initialCommentCount={post.comment_count}

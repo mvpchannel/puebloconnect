@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
 import { getUserById, updateUserProfile } from "@/lib/db";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
-import path from "node:path";
+import { saveDataUrlImage } from "@/lib/save-image";
 
 // GET/POST /api/account/profile — the real "Edit Profile" form's backend.
 // Lets the signed-in member change their first/last name, city, and
@@ -25,27 +23,6 @@ export async function GET(req: NextRequest) {
     bio: user.bio,
     coverPhotoPath: user.cover_photo_path,
   });
-}
-
-// Shared by the avatar and cover-photo upload paths below — same
-// validation (PNG/JPEG/WEBP, 3MB cap), different destination folder.
-function saveDataUrlImage(dataUrl: string, subdir: string): string | { error: string } {
-  const match = /^data:(image\/(png|jpeg|jpg|webp));base64,(.+)$/.exec(dataUrl);
-  if (!match) {
-    return { error: "Image must be a PNG, JPEG, or WEBP file." };
-  }
-  const [, , ext, base64Data] = match;
-  const buffer = Buffer.from(base64Data, "base64");
-  const MAX_BYTES = 3 * 1024 * 1024; // 3MB
-  if (buffer.length > MAX_BYTES) {
-    return { error: "Image must be smaller than 3MB." };
-  }
-  const uploadsDir = path.join(process.cwd(), "public", "uploads", subdir);
-  if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
-  const safeExt = ext === "jpeg" ? "jpg" : ext;
-  const fileName = `${randomUUID()}.${safeExt}`;
-  writeFileSync(path.join(uploadsDir, fileName), buffer);
-  return `/uploads/${subdir}/${fileName}`;
 }
 
 export async function POST(req: NextRequest) {

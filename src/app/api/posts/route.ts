@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
 import { createPost, listPosts, TargetType } from "@/lib/db";
+import { saveDataUrlImage } from "@/lib/save-image";
 
 const VALID_TARGET_TYPES: TargetType[] = ["feed", "group", "business", "event"];
 const MAX_POST_LENGTH = 5000;
@@ -36,6 +37,7 @@ export async function GET(req: NextRequest) {
         p.author_username,
       authorProfilePhotoPath: p.author_profile_photo_path,
       body: p.body,
+      imagePath: p.image_path,
       targetType: p.target_type,
       targetId: p.target_id,
       createdAt: p.created_at,
@@ -60,10 +62,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  const { body: text, targetType, targetId } = (body ?? {}) as Record<string, unknown>;
+  const { body: text, targetType, targetId, imageDataUrl } = (body ?? {}) as Record<string, unknown>;
 
-  if (typeof text !== "string" || text.trim().length === 0) {
-    return NextResponse.json({ error: "Post text is required." }, { status: 400 });
+  const hasImage = typeof imageDataUrl === "string" && imageDataUrl.length > 0;
+  // A post needs words, a photo, or both.
+  if (typeof text !== "string" || (text.trim().length === 0 && !hasImage)) {
+    return NextResponse.json({ error: "Write something or add a photo." }, { status: 400 });
   }
   if (text.length > MAX_POST_LENGTH) {
     return NextResponse.json(
@@ -88,7 +92,16 @@ export async function POST(req: NextRequest) {
     resolvedTargetId = targetId;
   }
 
-  const post = createPost(session.sub, text.trim(), resolvedTargetType, resolvedTargetId);
+  let imagePath: string | null = null;
+  if (hasImage) {
+    const saved = saveDataUrlImage(imageDataUrl as string, "posts");
+    if (typeof saved !== "string") {
+      return NextResponse.json({ error: `Photo: ${saved.error}` }, { status: 400 });
+    }
+    imagePath = saved;
+  }
+
+  const post = createPost(session.sub, text.trim(), resolvedTargetType, resolvedTargetId, imagePath);
   return NextResponse.json(
     {
       post: {
@@ -100,6 +113,7 @@ export async function POST(req: NextRequest) {
           post.author_username,
         authorProfilePhotoPath: post.author_profile_photo_path,
         body: post.body,
+        imagePath: post.image_path,
         targetType: post.target_type,
         targetId: post.target_id,
         createdAt: post.created_at,
