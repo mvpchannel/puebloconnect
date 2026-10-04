@@ -134,7 +134,7 @@ export default function Header() {
             <li>
               <a href="#" title="">Account settings</a>
               <ul>
-                <li><Link href="/login" title="">Messages</Link></li>
+                <li><Link href="/messages" title="">Messages</Link></li>
               </ul>
             </li>
             <li>
@@ -188,7 +188,7 @@ export default function Header() {
               {/* STATUS: needs backend/API — static placeholder, no real messages yet. */}
               <div className="dropdowns">
                 <span>No new messages</span>
-                <Link href="/login" title="" className="more-mesg">
+                <Link href="/messages" title="" className="more-mesg">
                   view all
                 </Link>
               </div>

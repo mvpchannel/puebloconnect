@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import EditProfileForm from "./EditProfileForm";
 
 export const metadata: Metadata = {
   title: "Edit Profile",
@@ -81,63 +82,7 @@ export default function Page() {
             </div>
             {/* Panel Title */}
             <div className="pnl-bdy billing-sec">
-              <div className="row">
-                <div className="col-md-6 field">
-                  <label>Your Name <span>*</span> </label>
-                  <input type="text" value="Brian" />
-                </div>
-                <div className="col-md-6 field">
-                  <label>Last Name <span>*</span> </label>
-                  <input type="text" value="Kelly"  />
-                </div>
-                <div className="col-md-6 field">
-                  <label>Country <span>*</span> </label>
-                  <select>
-                    <option>United State</option>
-                    <option>Pakistan</option>
-                    <option>United State</option>
-                  </select>
-                </div>
-                <div className="col-md-6 field">
-                  <label>City <span>*</span> </label>
-                  <input type="text" placeholder="Enter Your City"  />
-                </div>
-                <div className="col-md-12 field">
-                  <label>Address Line 1 <span>*</span> </label>
-                  <input type="text" placeholder="" />
-                </div>
-                <div className="col-md-12 field">
-                  <label>Address Line 2 <span>*</span> </label>
-                  <input type="text" placeholder="" />
-                </div>
-                <div className="col-md-6 field">
-                  <label>State / Province <span>*</span> </label>
-                  <input type="text" placeholder="" />
-                </div>
-                <div className="col-md-6 field">
-                  <label>Zip / Postal Code <span>*</span> </label>
-                  <input type="text" value=""  />
-                </div>
-                <div className="col-md-4 field">
-                  <label>Add Facebook URL <span>*</span> </label>
-                  <input type="text" value="https://www.facebook.com/manushichillaroffical"/>
-                </div>
-                <div className="col-md-4 field">
-                  <label>Add Twitter URL <span>*</span> </label>
-                  <input type="text" value="https://www.facebook.com/manushichillaroffical"/>
-                </div>
-                <div className="col-md-4 field">
-                  <label>Add Google URL <span>*</span> </label>
-                  <input type="text" value="https://www.facebook.com/manushichillaroffical"/>
-                </div>
-                <div className="col-md-12 field">
-                  <label>Add Google URL <span>*</span> </label>
-                  <input type="text" value="https://www.facebook.com/manushichillaroffical"/>
-                </div>
-                <div className="col-md-12">
-                  <button type="submit">Save Settings Now</button>
-                </div>
-              </div>
+              <EditProfileForm />
             </div>
             {/* Panel Body */} 
           </div>

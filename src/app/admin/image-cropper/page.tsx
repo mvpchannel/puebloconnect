@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import AdminPostForm from "@/components/admin/AdminPostForm";
 
 export const metadata: Metadata = {
   title: "Crop Image",
@@ -102,16 +103,7 @@ export default function Page() {
 								<div className="col-md-8">
 									<div className="widget">
 										<div className="add-content-form">
-											<textarea placeholder=""></textarea>
-											<div className="add-content">
-												<ul>
-													<li><a href="#" title=""><i className="fa fa-location-arrow"></i></a></li>
-													<li><a href="#" title=""><i className="fa fa-microphone"></i></a></li>
-													<li><a href="#" title=""><i className="fa fa-picture-o"></i></a></li>
-													<li><a href="#" title=""><i className="fa fa-cloud-upload"></i></a></li>
-												</ul>
-												<button type="submit" className="purple-skin">POST</button>
-											</div>
+											<AdminPostForm placeholder="" />
 										</div>
 									</div>
 									<div className="widget no-color">

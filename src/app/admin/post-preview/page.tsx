@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import PostPreviewForm from "./PostPreviewForm";
 
 export const metadata: Metadata = {
   title: "Preview Post",
@@ -104,16 +105,7 @@ export default function Page() {
                     </div>
                     <div className="add-img mrg10"></div>
                   </div>
-                  <div className="add-content">
-                    <ul>
-                      <li><a href="#" title=""><i className="fa fa-location-arrow"></i></a></li>
-                      <li><a href="#" title=""><i className="fa fa-microphone"></i></a></li>
-                      <li><a href="#" title=""><i className="fa fa-picture-o"></i></a></li>
-                      <li><a href="#" title=""><i className="fa fa-cloud-upload"></i></a></li>
-                    </ul>
-                    <a href="#" title="" className="pstng-sdl purple-skin">Posting Schdule</a>
-                    <button type="submit" className="purple-skin">Preview</button>
-                  </div>
+                  <PostPreviewForm />
                 </div>
               </div>
               <div className="col-lg-8 offset-lg-2 col-sm-12">

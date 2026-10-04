@@ -59,9 +59,6 @@ export default function Footer() {
               <div className="widget">
                 <div className="widget-title"><h4>Navigate</h4></div>
                 <ul className="list-style">
-                  {/* STATUS: /about and /contact are linked but not ported
-                      into this app yet (pre-existing gap, not introduced
-                      here) — still only in the Phase 0 static site. */}
                   <li><Link href="/about" title="">About us</Link></li>
                   <li><Link href="/contact" title="">Contact us</Link></li>
                   <li><Link href="/membership" title="">Business Membership</Link></li>

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import AdminReplyForm from "@/components/admin/AdminReplyForm";
 
 export const metadata: Metadata = {
   title: "Support Ticket — Style 1",
@@ -94,8 +95,7 @@ export default function Page() {
                     </div>
                     <a href="#" title="" className="sndr-alt">@markr</a> <a href="#" title="" className="sndr-adr">42 avenue des champs elysees 75000</a>
                     <p>Exhibiting a cool and engaging layout, Electric Admin is an extraordinarily</p>
-                    <textarea placeholder="Reply To Comment"></textarea>
-                    <button type="submit" className="purple-skin rply">Reply</button>
+                    <AdminReplyForm />
                   </div>
                 </div>
               </div>
@@ -120,12 +120,11 @@ export default function Page() {
                         <p>Exhibiting a cool and engaging layout, Electric Admin is an extraordinarily</p>
                       </div>
                     </div>
-                    <textarea placeholder="Reply To Comment"></textarea>
-                    <button type="submit" className="purple-skin rply">Reply</button>
+                    <AdminReplyForm />
                   </div>
                 </div>
               </div>
-              {/* Ticket Item */} 
+              {/* Ticket Item */}
             </div>
             {/* Panel Body */} 
           </div>
