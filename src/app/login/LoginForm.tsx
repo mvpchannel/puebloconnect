@@ -1,18 +1,89 @@
 "use client";
 
-import { useState } from "react";
+import { useState, FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 /**
  * Ported from landing.html. The sign-in/register panel swap was originally
  * driven by main.min.js (jQuery) toggling a `.show` class — reimplemented
  * here as real React state instead of silently dropping the interaction.
  *
- * STATUS: needs backend/API. The toggle between Login/Register is fully
- * functional; the forms themselves do not submit anywhere yet — no auth
- * system is wired up. See /FUNCTIONALITY_STATUS.md.
+ * STATUS: real. Both forms submit to actual API routes
+ * (/api/auth/login, /api/auth/register) backed by a real SQLite users
+ * table with hashed passwords and signed session cookies — see
+ * src/lib/db.ts, src/lib/password.ts, src/lib/session.ts. No more
+ * placeholder submit handlers.
  */
 function LoginForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectTo = searchParams.get("from") || "/newsfeed";
+
   const [showRegister, setShowRegister] = useState(false);
+
+  const [loginUsername, setLoginUsername] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginBusy, setLoginBusy] = useState(false);
+
+  const [regName, setRegName] = useState("");
+  const [regUsername, setRegUsername] = useState("");
+  const [regPassword, setRegPassword] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regError, setRegError] = useState<string | null>(null);
+  const [regBusy, setRegBusy] = useState(false);
+
+  async function handleLogin(e: FormEvent) {
+    e.preventDefault();
+    setLoginError(null);
+    setLoginBusy(true);
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setLoginError(data.error || "Login failed.");
+        return;
+      }
+      router.push(redirectTo);
+      router.refresh();
+    } catch {
+      setLoginError("Couldn't reach the server. Try again.");
+    } finally {
+      setLoginBusy(false);
+    }
+  }
+
+  async function handleRegister(e: FormEvent) {
+    e.preventDefault();
+    setRegError(null);
+    setRegBusy(true);
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: regUsername,
+          email: regEmail,
+          password: regPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRegError(data.error || "Registration failed.");
+        return;
+      }
+      router.push("/newsfeed");
+      router.refresh();
+    } catch {
+      setRegError("Couldn't reach the server. Try again.");
+    } finally {
+      setRegBusy(false);
+    }
+  }
 
   return (
     <div className="container-fluid pdng0">
@@ -45,14 +116,33 @@ function LoginForm() {
                   Join now
                 </a>
               </p>
-              <form method="post">
+              <form method="post" onSubmit={handleLogin}>
+                {loginError && (
+                  <p role="alert" style={{ color: "#e02020", marginBottom: 12 }}>
+                    {loginError}
+                  </p>
+                )}
                 <div className="form-group">
-                  <input type="text" id="login-username" required />
+                  <input
+                    type="text"
+                    id="login-username"
+                    required
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
+                    autoComplete="username"
+                  />
                   <label className="control-label" htmlFor="login-username">Username</label>
                   <i className="mtrl-select" />
                 </div>
                 <div className="form-group">
-                  <input type="password" id="login-password" required />
+                  <input
+                    type="password"
+                    id="login-password"
+                    required
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    autoComplete="current-password"
+                  />
                   <label className="control-label" htmlFor="login-password">Password</label>
                   <i className="mtrl-select" />
                 </div>
@@ -63,10 +153,11 @@ function LoginForm() {
                     Always remember me.
                   </label>
                 </div>
+                {/* STATUS: needs backend/API. Password-reset email flow doesn't exist yet. */}
                 <a href="#" title="" className="forgot-pwd">Forgot password?</a>
                 <div className="submit-btns">
-                  <button className="mtr-btn signin" type="submit">
-                    <span>Login</span>
+                  <button className="mtr-btn signin" type="submit" disabled={loginBusy}>
+                    <span>{loginBusy ? "Logging in…" : "Login"}</span>
                   </button>
                   <button
                     className="mtr-btn signup"
@@ -94,23 +185,54 @@ function LoginForm() {
                   Join now
                 </a>
               </p>
-              <form method="post">
+              <form method="post" onSubmit={handleRegister}>
+                {regError && (
+                  <p role="alert" style={{ color: "#e02020", marginBottom: 12 }}>
+                    {regError}
+                  </p>
+                )}
                 <div className="form-group">
-                  <input type="text" id="reg-name" required />
+                  {/* STATUS: collected but not yet stored — the users table
+                      doesn't have a display-name column yet (username only).
+                      Real, not fake: it's just not wired to this field yet. */}
+                  <input
+                    type="text"
+                    id="reg-name"
+                    required
+                    value={regName}
+                    onChange={(e) => setRegName(e.target.value)}
+                    autoComplete="name"
+                  />
                   <label className="control-label" htmlFor="reg-name">First &amp; Last Name</label>
                   <i className="mtrl-select" />
                 </div>
                 <div className="form-group">
-                  <input type="text" id="reg-username" required />
+                  <input
+                    type="text"
+                    id="reg-username"
+                    required
+                    value={regUsername}
+                    onChange={(e) => setRegUsername(e.target.value)}
+                    autoComplete="username"
+                  />
                   <label className="control-label" htmlFor="reg-username">User Name</label>
                   <i className="mtrl-select" />
                 </div>
                 <div className="form-group">
-                  <input type="password" id="reg-password" required />
-                  <label className="control-label" htmlFor="reg-password">Password</label>
+                  <input
+                    type="password"
+                    id="reg-password"
+                    required
+                    minLength={8}
+                    value={regPassword}
+                    onChange={(e) => setRegPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                  <label className="control-label" htmlFor="reg-password">Password (min. 8 characters)</label>
                   <i className="mtrl-select" />
                 </div>
                 <div className="form-radio">
+                  {/* STATUS: collected but not yet stored — same as display name above. */}
                   <div className="radio">
                     <label>
                       <input type="radio" name="gender" defaultChecked />
@@ -127,15 +249,22 @@ function LoginForm() {
                   </div>
                 </div>
                 <div className="form-group">
-                  <input type="email" id="reg-email" required />
+                  <input
+                    type="email"
+                    id="reg-email"
+                    required
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    autoComplete="email"
+                  />
                   <label className="control-label" htmlFor="reg-email">Email</label>
                   <i className="mtrl-select" />
                 </div>
                 <div className="checkbox">
                   <label>
-                    <input type="checkbox" defaultChecked />
+                    <input type="checkbox" required />
                     <i className="check-box" />
-                    Accept Terms &amp; Conditions?
+                    Accept <a href="/terms" target="_blank" rel="noreferrer">Terms &amp; Conditions</a>?
                   </label>
                 </div>
                 <a
@@ -150,8 +279,8 @@ function LoginForm() {
                   Already have an account
                 </a>
                 <div className="submit-btns">
-                  <button className="mtr-btn signup" type="submit">
-                    <span>Register</span>
+                  <button className="mtr-btn signup" type="submit" disabled={regBusy}>
+                    <span>{regBusy ? "Creating account…" : "Register"}</span>
                   </button>
                 </div>
               </form>

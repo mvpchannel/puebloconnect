@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+
+type SessionUser = { id: number; username: string; email: string; role: "member" | "admin" };
 
 /**
  * Shared site header: mobile responsive-header + desktop topbar.
@@ -18,7 +21,32 @@ import Link from "next/link";
  * site for the full feature-by-feature breakdown (same gaps apply here).
  */
 export default function Header() {
+  const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [user, setUser] = useState<SessionUser | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/session")
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setUser(data.user);
+      })
+      .catch(() => {
+        /* STATUS: if this fails, the header just shows the logged-out state. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleLogout(e: React.MouseEvent) {
+    e.preventDefault();
+    await fetch("/api/auth/logout", { method: "POST" });
+    setUser(null);
+    router.push("/login");
+    router.refresh();
+  }
 
   return (
     <>
@@ -158,13 +186,34 @@ export default function Header() {
             </li>
           </ul>
           <div className="user-img">
-            <img src="/images/resources/admin.jpg" alt="" />
+            <img
+              src={
+                user ? "/images/defaults/default-avatar-male.jpg" : "/images/resources/admin.jpg"
+              }
+              alt=""
+            />
             <span className="status f-online" />
             <div className="user-setting">
-              <a href="#" title=""><i className="ti-user" /> view profile</a>
-              <a href="#" title=""><i className="ti-pencil-alt" /> edit profile</a>
-              <a href="#" title=""><i className="ti-settings" /> account setting</a>
-              <a href="#" title=""><i className="ti-power-off" /> log out</a>
+              {user ? (
+                <>
+                  <span style={{ display: "block", padding: "8px 15px", fontWeight: 600 }}>
+                    {user.username} {user.role === "admin" && "(admin)"}
+                  </span>
+                  <Link href="/profile" title=""><i className="ti-user" /> view profile</Link>
+                  {/* STATUS: needs backend/API — edit-profile and account-settings pages
+                      don't exist in this app yet (still static-only in the Phase 0 site). */}
+                  <a href="#" title=""><i className="ti-pencil-alt" /> edit profile</a>
+                  <a href="#" title=""><i className="ti-settings" /> account setting</a>
+                  {user.role === "admin" && (
+                    <Link href="/admin" title=""><i className="ti-shield" /> admin</Link>
+                  )}
+                  <a href="#" title="" onClick={handleLogout}>
+                    <i className="ti-power-off" /> log out
+                  </a>
+                </>
+              ) : (
+                <Link href="/login" title=""><i className="ti-power-off" /> log in</Link>
+              )}
             </div>
           </div>
           <span

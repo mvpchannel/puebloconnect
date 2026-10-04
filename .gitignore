@@ -5,3 +5,8 @@ out
 npm-debug.log*
 .DS_Store
 next-env.d.ts
+
+# Real user data — never commit this. See data/.gitkeep.
+data/*.db
+data/*.db-shm
+data/*.db-wal

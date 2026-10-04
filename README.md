@@ -4,7 +4,7 @@ This is the Phase 1 foundation: the static Winku/Pueblo Connect HTML site,
 ported into Next.js (App Router + TypeScript) with shared Header/Footer/
 Sidebar components instead of markup duplicated across 60+ files.
 
-## ⚠️ Not yet build-verified
+## ⚠️ Not yet build-verified (but the auth system IS runtime-tested)
 
 This code was written in a sandboxed environment where `npm install` is
 blocked (both the public npm registry and an internal mirror returned
@@ -12,39 +12,102 @@ blocked (both the public npm registry and an internal mirror returned
 means:
 
 - Every `.ts`/`.tsx` file **was** syntax-checked with esbuild (confirms
-  valid TypeScript/JSX, no unclosed tags or structural mistakes) — 14/14
+  valid TypeScript/JSX, no unclosed tags or structural mistakes) — 25/25
   files passed.
 - It has **not** been through an actual `next build`, so TypeScript type
   errors against the real `next`/`react` type definitions, any remaining
   import mistakes, or runtime issues can't be ruled out yet.
+- **Exception: the auth/session/database logic was actually run**, not just
+  syntax-checked — see "Auth system" below. It needs no `npm install` because
+  it's built entirely on Node's own built-ins.
 
 **First thing to do on a machine with working npm access:**
 
 ```bash
 npm install
+cp .env.example .env.local   # then fill in SESSION_SECRET (see the file)
 npm run dev     # http://localhost:3000
 # once that looks right:
 npm run build
 ```
 
-Fix whatever `npm run build` surfaces — treat this as a reviewed-but-untested
-first draft, not a verified build.
+Fix whatever `npm run build` surfaces — treat the Next.js wiring (routing,
+JSX, component props) as reviewed-but-untested; treat the auth logic itself
+as already verified (below).
+
+## Auth system (real, not a mockup)
+
+Member registration, login, logout, and sessions are fully implemented and
+backed by a real database — not placeholder forms. Built with **zero new
+npm dependencies**: it uses only Node.js built-ins (`node:sqlite`,
+`node:crypto`, Web Crypto), which is why it could be genuinely tested in
+this sandbox despite the npm block.
+
+- **Database**: `src/lib/db.ts` — SQLite via Node's built-in `node:sqlite`
+  (stable in Node ≥22.5, no native compilation, no server to run). One
+  `users` table: id, username, email, password_hash, role
+  (`member`/`admin`), created_at.
+- **Passwords**: `src/lib/password.ts` — scrypt with a random salt per
+  user, timing-safe comparison. Verified by hand: correct password
+  accepted, wrong password rejected.
+- **Sessions**: `src/lib/session.ts` signs a small HMAC-SHA256 token
+  (same idea as a JWT) into an httpOnly cookie. `src/lib/session-edge.ts`
+  verifies it inside `src/middleware.ts`, which runs on the Edge runtime
+  and can't use Node's `crypto` module — it uses the standard Web Crypto
+  API instead. **Verified by hand**: a token signed with Node's
+  `createHmac` round-trips correctly through `crypto.subtle.verify`,
+  and a wrong secret or a tampered payload is correctly rejected.
+- **Routes**: `POST /api/auth/register`, `POST /api/auth/login`,
+  `POST /api/auth/logout`, `GET /api/auth/session`.
+- **Protected pages**: `src/middleware.ts` redirects to `/login` if you're
+  not signed in and try to visit `/newsfeed`, `/profile`, or `/admin`; it
+  additionally requires `role: admin` for `/admin` (a logged-in member gets
+  bounced to `/newsfeed`, not shown that `/admin` exists).
+- **Admins aren't created through the signup form, ever** — registering
+  always creates a `member`. The only way to create an admin is running
+  `npm run create-admin -- <username> <email> <password>` (or
+  `node scripts/create-admin.mjs ...`) on the server, by someone with shell
+  access. This was run and verified in this sandbox — it creates a real row
+  in the SQLite file with a correctly hashed password.
+- **What's still a placeholder**: the registration form's "First & Last
+  Name" and gender fields are collected in the UI but there's no column
+  for them yet in the `users` table — marked with a `STATUS:` comment in
+  `LoginForm.tsx` rather than silently dropped. Password reset
+  ("Forgot password?") isn't built — it would need an email-sending
+  service, which is a credentialed third-party integration, not something
+  to fake.
+
+### `/admin` — one real example, not the whole panel
+
+`src/app/admin/page.tsx` is a genuinely protected page (only reachable with
+a `role: admin` session) that lists real users from the database. It is
+**not** the full admin panel — the other 15 screens (tickets, reviews,
+location management, calendar, etc.) still live as static HTML with zero
+access control in `../pueblo-connect/winku admin/`. Porting each one here,
+the same way `/admin` was done, is how they'd get real protection; until
+then, the static site's `.htaccess.example`/`robots.txt`/`noindex` additions
+are the only (partial) mitigation for those pages — see
+`FUNCTIONALITY_STATUS.md` in the Phase 0 site.
 
 ## What's ported so far
 
 | Route | Source | Status |
 |---|---|---|
-| `/login` | `landing.html` | Login/Register toggle re-implemented as real React state (the original used jQuery for this). Forms don't submit anywhere — no backend. |
-| `/newsfeed` | `newsfeed.html` | Composer + feed with sample posts. Like button is real local state (not persisted). Comments post locally only. |
-| `/profile` | `time-line.html` | Cover photo + avatar + tabs header, reuses the newsfeed composer/post components. |
+| `/login` | `landing.html` | Login and Register forms are real — they call the auth API above, not placeholders. |
+| `/newsfeed` | `newsfeed.html` | Requires login (middleware-protected). Composer + feed with sample posts. Like button is real local state (not persisted). Comments post locally only. |
+| `/profile` | `time-line.html` | Requires login. Cover photo/avatar/tabs header, reuses the newsfeed composer/post components. |
+| `/admin` | — (new) | Requires login **and** `role: admin`. Real page, lists real users from the database. See above. |
 | `/terms` | `terms.html` (Phase 0) | Same placeholder draft content — still needs a lawyer's review before launch. |
 | `/sitemap-page` | `sitemap.html` (Phase 0) | Human-readable page listing routes. (Note: `/sitemap.xml` is a *separate*, real machine-readable sitemap generated by `src/app/sitemap.ts` — a genuine Next.js SEO feature the static site couldn't offer.) |
 | `/` | — | Redirects to `/login`. |
 
 Everything else — groups, messages, notifications, the business directory,
-shop, forum, the whole `winku admin/` panel, etc. — is **still only in the
-Phase 0 static HTML site** (`../pueblo-connect/winku-html/`). Port the rest
-page by page using the pattern below.
+shop, forum, and 15 of the 16 `winku admin/` panel pages — is **still only
+in the Phase 0 static HTML site** (`../pueblo-connect/winku-html/`), with no
+auth protection at all since that site has no server to check a session
+against. Port the rest page by page using the pattern below; any page that
+should require login or admin can reuse `src/middleware.ts` by just adding
+its path to `MEMBER_ROUTES`/`ADMIN_ROUTES`.
 
 ## Architecture decisions made while porting
 
