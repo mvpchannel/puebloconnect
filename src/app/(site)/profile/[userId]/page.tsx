@@ -8,6 +8,7 @@ import PostCard from "@/components/PostCard";
 import ProfileActions from "@/components/ProfileActions";
 import ProfileImageEditor from "@/components/ProfileImageEditor";
 import { getCurrentUser } from "@/lib/require-user";
+import { viewerAvatarSrc } from "@/lib/viewer";
 import { getUserById, listPostsByAuthor, listFriends, areFriends, getFriendRequestBetween } from "@/lib/db";
 import { formatRelativeTime } from "@/lib/time";
 
@@ -36,6 +37,7 @@ export default async function MemberProfilePage({ params }: Props) {
   if (!profileUser) notFound();
 
   const session = await getCurrentUser();
+  const viewerAvatar = viewerAvatarSrc(session?.sub ?? null);
   const isOwner = session?.sub === targetId;
   const posts = listPostsByAuthor(session?.sub ?? null, targetId);
   const friendCount = listFriends(targetId).length;
@@ -136,7 +138,7 @@ export default async function MemberProfilePage({ params }: Props) {
                         </div>
                       </div>
                     )}
-                    {isOwner && <PostComposer isLoggedIn={Boolean(session)} />}
+                    {isOwner && <PostComposer avatarSrc={viewerAvatar} isLoggedIn={Boolean(session)} />}
                     <div className="loadMore">
                       {posts.length === 0 && (
                         <div className="central-meta item">
@@ -147,6 +149,7 @@ export default async function MemberProfilePage({ params }: Props) {
                       )}
                       {posts.map((post) => (
                         <PostCard
+                      viewerAvatar={viewerAvatar}
                           key={post.id}
                           postId={post.id}
                           authorId={post.author_id}

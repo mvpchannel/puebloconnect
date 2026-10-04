@@ -7,21 +7,24 @@ import PostComposer from "@/components/PostComposer";
 import PostCard from "@/components/PostCard";
 import DealClaimButton from "@/components/DealClaimButton";
 import { getCurrentUser } from "@/lib/require-user";
-import { listPosts, getFeaturedDeal, hasClaimedDeal } from "@/lib/db";
+import { viewerAvatarSrc } from "@/lib/viewer";
+import { listFeedPosts, getFeaturedDeal, hasClaimedDeal } from "@/lib/db";
 import { formatRelativeTime } from "@/lib/time";
 
 export const metadata: Metadata = {
   title: "Newsfeed",
 };
 
-// Real posts API now backs this page — see src/lib/db.ts (posts table)
+// Shows every member post (main feed, walls, groups, businesses, events),
+// newest first. Real posts API now backs this page — see src/lib/db.ts (posts table)
 // and src/app/api/posts/*. Rendered server-side so the first paint
 // already has real data (and already knows whether the viewer liked each
 // post) instead of a loading flash; PostComposer/PostCard call the API
 // client-side for actions and router.refresh() to pick up changes.
 export default async function NewsfeedPage() {
   const session = await getCurrentUser();
-  const posts = listPosts(session?.sub ?? null, "feed", null);
+  const viewerAvatar = viewerAvatarSrc(session?.sub ?? null);
+  const posts = listFeedPosts(session?.sub ?? null);
   const dealOfTheDay = getFeaturedDeal();
 
   return (
@@ -60,7 +63,7 @@ export default async function NewsfeedPage() {
                 )}
               </div>
               <div className="col-lg-6">
-                <PostComposer isLoggedIn={Boolean(session)} />
+                <PostComposer avatarSrc={viewerAvatar} isLoggedIn={Boolean(session)} />
                 <div className="loadMore">
                   {posts.length === 0 && (
                     <div className="central-meta item">
@@ -71,6 +74,12 @@ export default async function NewsfeedPage() {
                   )}
                   {posts.map((post) => (
                     <PostCard
+                      viewerAvatar={viewerAvatar}
+                      postedIn={
+                        post.posted_in_label && post.posted_in_href
+                          ? { label: post.posted_in_label, href: post.posted_in_href }
+                          : null
+                      }
                       key={post.id}
                       postId={post.id}
                       authorId={post.author_id}

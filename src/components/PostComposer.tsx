@@ -10,6 +10,8 @@ type PostComposerProps = {
   // — same posts table, same API route, just a different target.
   targetType?: "feed" | "group" | "business" | "event";
   targetId?: number | null;
+  // The posting member's own avatar (see src/lib/viewer.ts).
+  avatarSrc?: string;
 };
 
 // Real backend: POST /api/posts (src/app/api/posts/route.ts), backed by
@@ -19,6 +21,7 @@ export default function PostComposer({
   isLoggedIn,
   targetType = "feed",
   targetId = null,
+  avatarSrc = "/images/defaults/default-avatar-male.jpg",
 }: PostComposerProps) {
   const router = useRouter();
   const [text, setText] = useState("");
@@ -60,7 +63,7 @@ export default function PostComposer({
     <div className="central-meta new-pst">
       <div className="new-postbox">
         <figure>
-          <img src="/images/resources/admin2.jpg" alt="" />
+          <img src={avatarSrc} alt="" />
         </figure>
         <div className="newpst-input">
           <form method="post" onSubmit={handleSubmit}>

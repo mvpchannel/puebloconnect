@@ -19,6 +19,10 @@ type PostCardProps = {
   // is a UI convenience, not the actual authorization boundary.
   currentUserId?: number | null;
   isAdmin?: boolean;
+  // Where the post was made, when not the plain feed (group/business/event).
+  postedIn?: { label: string; href: string } | null;
+  // The viewer's own avatar, shown beside the comment box.
+  viewerAvatar?: string;
 };
 
 type Comment = {
@@ -47,6 +51,8 @@ export default function PostCard({
   isLoggedIn,
   currentUserId = null,
   isAdmin = false,
+  postedIn = null,
+  viewerAvatar = "/images/defaults/default-avatar-male.jpg",
 }: PostCardProps) {
   const [liked, setLiked] = useState(initialLiked);
   const [likeCount, setLikeCount] = useState(initialLikeCount);
@@ -192,7 +198,14 @@ export default function PostCard({
           </figure>
           <div className="friend-name">
             <ins><Link href={`/profile/${authorId}`} title="">{authorName}</Link></ins>
-            <span>published: {publishedLabel}</span>
+            <span>
+              published: {publishedLabel}
+              {postedIn && (
+                <>
+                  {" "}· in <Link href={postedIn.href} title="">{postedIn.label}</Link>
+                </>
+              )}
+            </span>
           </div>
           {canDelete && (
             <div style={{ position: "absolute", top: 14, right: 14, zIndex: 1 }}>
@@ -258,7 +271,7 @@ export default function PostCard({
             {comments.map((c) => (
               <li className="post-comment" key={c.id}>
                 <div className="comet-avatar">
-                  <img src={c.authorProfilePhotoPath || "/images/resources/admin.jpg"} alt="" />
+                  <img src={c.authorProfilePhotoPath || "/images/defaults/default-avatar-male.jpg"} alt="" />
                 </div>
                 <div className="post-comt-box">
                   <h5><Link href={`/profile/${c.authorId}`} title="">{c.authorName}</Link></h5>
@@ -268,7 +281,7 @@ export default function PostCard({
             ))}
             <li className="post-comment">
               <div className="comet-avatar">
-                <img src="/images/resources/admin.jpg" alt="" />
+                <img src={viewerAvatar} alt="" />
               </div>
               <div className="post-comt-box">
                 <form method="post" onSubmit={submitComment}>

@@ -8,6 +8,7 @@ import PostComposer from "@/components/PostComposer";
 import PostCard from "@/components/PostCard";
 import EventRsvpPanel from "@/components/EventRsvpPanel";
 import { getCurrentUser } from "@/lib/require-user";
+import { viewerAvatarSrc } from "@/lib/viewer";
 import {
   getEventBySlug,
   getRsvpStatus,
@@ -49,6 +50,7 @@ export default async function EventDetailPage({
   if (!event) notFound();
 
   const session = await getCurrentUser();
+  const viewerAvatar = viewerAvatarSrc(session?.sub ?? null);
   const rsvpStatus = session ? getRsvpStatus(event.id, session.sub) : null;
   const checkedIn = session ? isCheckedIn(event.id, session.sub) : false;
   const attendees = listEventAttendees(event.id, 20);
@@ -149,7 +151,7 @@ export default async function EventDetailPage({
                     )}
                   </div>
                   <div className="col-lg-6">
-                    <PostComposer
+                    <PostComposer avatarSrc={viewerAvatar}
                       isLoggedIn={Boolean(session)}
                       targetType="event"
                       targetId={event.id}
@@ -164,6 +166,7 @@ export default async function EventDetailPage({
                       )}
                       {posts.map((post) => (
                         <PostCard
+                      viewerAvatar={viewerAvatar}
                           key={post.id}
                           postId={post.id}
                           authorId={post.author_id}

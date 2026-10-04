@@ -1802,6 +1802,42 @@ export function listPosts(
     .all(...params, limit) as PostWithAuthor[];
 }
 
+// The global newsfeed: every member post, wherever it was made (the main
+// feed, a profile wall, a group, a business page or an event page), newest
+// first. Posts made outside the plain feed carry a label + link for where
+// they were posted, so the feed can show "in <Group name>".
+export type FeedPost = PostWithAuthor & {
+  posted_in_label: string | null;
+  posted_in_href: string | null;
+};
+
+export function listFeedPosts(viewerId: number | null, limit = 30): FeedPost[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT
+         p.id, p.author_id, p.body, p.target_type, p.target_id, p.created_at,
+         u.username AS author_username,
+         u.first_name AS author_first_name,
+         u.last_name AS author_last_name,
+         u.profile_photo_path AS author_profile_photo_path,
+         (SELECT COUNT(*) FROM post_likes pl WHERE pl.post_id = p.id) AS like_count,
+         (SELECT COUNT(*) FROM post_comments pc WHERE pc.post_id = p.id AND pc.deleted_at IS NULL) AS comment_count,
+         (SELECT COUNT(*) FROM post_likes pl2 WHERE pl2.post_id = p.id AND pl2.user_id = ?) AS liked_by_viewer,
+         CASE p.target_type WHEN 'group' THEN g.name WHEN 'business' THEN b.name WHEN 'event' THEN e.title END AS posted_in_label,
+         CASE p.target_type WHEN 'group' THEN '/groups/' || g.slug WHEN 'business' THEN '/businesses/' || b.slug WHEN 'event' THEN '/events/' || e.slug END AS posted_in_href
+       FROM posts p
+       JOIN users u ON u.id = p.author_id
+       LEFT JOIN groups g ON p.target_type = 'group' AND g.id = p.target_id
+       LEFT JOIN businesses b ON p.target_type = 'business' AND b.id = p.target_id
+       LEFT JOIN events e ON p.target_type = 'event' AND e.id = p.target_id
+       WHERE p.deleted_at IS NULL
+       ORDER BY p.created_at DESC, p.id DESC
+       LIMIT ?`
+    )
+    .all(viewerId ?? 0, limit) as FeedPost[];
+}
+
 // Used by the profile/timeline page — a member's own posts across every
 // target (feed, and later group/business/event posts they made), newest
 // first.

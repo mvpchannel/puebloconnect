@@ -7,6 +7,7 @@ import PostComposer from "@/components/PostComposer";
 import PostCard from "@/components/PostCard";
 import GroupJoinButton from "@/components/GroupJoinButton";
 import { getCurrentUser } from "@/lib/require-user";
+import { viewerAvatarSrc } from "@/lib/viewer";
 import { getGroupBySlug, getGroupMemberRole, listPosts, listGroupMembers, parseTags } from "@/lib/db";
 import { formatRelativeTime } from "@/lib/time";
 
@@ -31,6 +32,7 @@ export default async function GroupDetailPage({
   if (!group) notFound();
 
   const session = await getCurrentUser();
+  const viewerAvatar = viewerAvatarSrc(session?.sub ?? null);
   const role = session ? getGroupMemberRole(group.id, session.sub) : null;
   const posts = listPosts(session?.sub ?? null, "group", group.id);
   const members = listGroupMembers(group.id, 12);
@@ -123,7 +125,7 @@ export default async function GroupDetailPage({
                     </div>
                   </div>
                   <div className="col-lg-6">
-                    <PostComposer
+                    <PostComposer avatarSrc={viewerAvatar}
                       isLoggedIn={Boolean(session)}
                       targetType="group"
                       targetId={group.id}
@@ -138,6 +140,7 @@ export default async function GroupDetailPage({
                       )}
                       {posts.map((post) => (
                         <PostCard
+                      viewerAvatar={viewerAvatar}
                           key={post.id}
                           postId={post.id}
                           authorId={post.author_id}

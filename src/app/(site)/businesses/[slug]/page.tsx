@@ -12,6 +12,7 @@ import BusinessOwnerPanel from "@/components/BusinessOwnerPanel";
 import DealClaimButton from "@/components/DealClaimButton";
 import PassportVisitBeacon from "@/components/PassportVisitBeacon";
 import { getCurrentUser } from "@/lib/require-user";
+import { viewerAvatarSrc } from "@/lib/viewer";
 import {
   getBusinessBySlug,
   isFollowingBusiness,
@@ -51,6 +52,7 @@ export default async function BusinessChannelPage({
   if (!business) notFound();
 
   const session = await getCurrentUser();
+  const viewerAvatar = viewerAvatarSrc(session?.sub ?? null);
   const isOwner = session ? isBusinessOwner(business.id, session.sub) : false;
   const isFollowing = session ? isFollowingBusiness(business.id, session.sub) : false;
   const posts = listPosts(session?.sub ?? null, "business", business.id);
@@ -281,7 +283,7 @@ export default async function BusinessChannelPage({
                     />
                   </div>
                   <div className="col-lg-6">
-                    <PostComposer
+                    <PostComposer avatarSrc={viewerAvatar}
                       isLoggedIn={Boolean(session)}
                       targetType="business"
                       targetId={business.id}
@@ -296,6 +298,7 @@ export default async function BusinessChannelPage({
                       )}
                       {posts.map((post) => (
                         <PostCard
+                      viewerAvatar={viewerAvatar}
                           key={post.id}
                           postId={post.id}
                           authorId={post.author_id}
