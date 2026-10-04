@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { SITE_URL } from "@/lib/site-url";
 
 /**
  * Root layout — deliberately minimal. This app has two visually separate
@@ -11,13 +12,20 @@ import type { Metadata, Viewport } from "next";
  * Loading both CSS stacks globally here would mean two different Bootstrap
  * builds fighting over the same class names site-wide.
  */
+const SITE_DESCRIPTION =
+  "Connect Local. Shop Local. Grow Together. A community-focused social network connecting Pueblo residents and local businesses, powered by The Daily Pueblo.";
+
 export const metadata: Metadata = {
+  // Lets every relative URL in this file (and in page-level metadata,
+  // like the OG image below) resolve to a real absolute URL — needed for
+  // Open Graph/Twitter tags, which crawlers fetch directly rather than
+  // resolving relative to whatever page linked them.
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "Pueblo Connect",
     template: "%s – Pueblo Connect",
   },
-  description:
-    "Connect Local. Shop Local. Grow Together. A community-focused social network connecting Pueblo residents and local businesses, powered by The Daily Pueblo.",
+  description: SITE_DESCRIPTION,
   icons: {
     icon: "/images/fav.png",
     apple: "/icons/icon-192.png",
@@ -27,6 +35,26 @@ export const metadata: Metadata = {
     capable: true,
     statusBarStyle: "default",
     title: "Pueblo Connect",
+  },
+  // So a link to Pueblo Connect shared on Facebook/iMessage/Slack/etc.
+  // unfurls into a real preview card instead of a bare link — previously
+  // there were no og:/twitter: tags at all. og-image.png is a real
+  // 1200×630 image generated from the actual brand mark and colors
+  // (public/images/fav.png, the same blue as the landing page's hero),
+  // not a stock photo.
+  openGraph: {
+    type: "website",
+    siteName: "Pueblo Connect",
+    title: "Pueblo Connect — Connect Local. Shop Local. Grow Together.",
+    description: SITE_DESCRIPTION,
+    url: SITE_URL,
+    images: [{ url: "/images/og-image.png", width: 1200, height: 630, alt: "Pueblo Connect" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Pueblo Connect — Connect Local. Shop Local. Grow Together.",
+    description: SITE_DESCRIPTION,
+    images: ["/images/og-image.png"],
   },
 };
 
