@@ -16,7 +16,7 @@ export default function Sidebar() {
           </li>
           <li>
             <i className="ti-mouse-alt" />
-            <Link href="/login" title="">Inbox</Link>
+            <Link href="/messages" title="">Inbox</Link>
           </li>
           <li>
             <i className="ti-files" />
