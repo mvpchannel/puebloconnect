@@ -58,6 +58,10 @@ export default function Sidebar() {
             <i className="ti-camera" />
             <Link href="/street-team" title="">Pueblo Street Team</Link>
           </li>
+          <li>
+            <i className="ti-microphone-alt" />
+            <Link href="/booth" title="">The Pueblo Booth</Link>
+          </li>
         </ul>
       </div>
     </aside>

@@ -744,6 +744,36 @@ function getDb(): DatabaseSync {
       `CREATE INDEX IF NOT EXISTS idx_street_team_submitter ON street_team_submissions(submitter_id)`
     );
 
+    // The Pueblo Booth. A weekly community question; members answer with
+    // text or a video/audio link (same no-upload-pipeline honesty as
+    // Street Team). One answer per member per question — editable while
+    // the question stays open, via ON CONFLICT upsert.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS booth_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_text TEXT NOT NULL,
+        created_by INTEGER NOT NULL REFERENCES users(id),
+        opens_at TEXT NOT NULL DEFAULT (datetime('now')),
+        closes_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_booth_questions_opens ON booth_questions(opens_at)`);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS booth_answers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_id INTEGER NOT NULL REFERENCES booth_questions(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        answer_type TEXT NOT NULL CHECK (answer_type IN ('text', 'video', 'audio')),
+        answer_text TEXT,
+        media_url TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (question_id, user_id)
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_booth_answers_question ON booth_answers(question_id)`);
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -3671,4 +3701,156 @@ export function getStreetTeamBadgesForUser(userId: number): StreetTeamBadge[] {
   if (counts.photos >= 5) badges.push("pueblo_photographer");
   if (counts.videos >= 5) badges.push("pueblo_reporter");
   return badges;
+}
+
+// ---------------------------------------------------------------------
+// The Pueblo Booth: a weekly community question. Members answer with
+// text, or a video/audio link (same honest no-upload-pipeline pattern
+// as Street Team — a link the member hosts elsewhere). One answer per
+// member per question, editable while the question stays open — an
+// upsert, same shape as business reviews.
+
+export type BoothAnswerType = "text" | "video" | "audio";
+
+export type BoothQuestion = {
+  id: number;
+  question_text: string;
+  created_by: number;
+  opens_at: string;
+  closes_at: string | null;
+  is_open: 0 | 1;
+  answer_count: number;
+  created_at: string;
+};
+
+export type BoothAnswer = {
+  id: number;
+  question_id: number;
+  user_id: number;
+  answer_type: BoothAnswerType;
+  answer_text: string | null;
+  media_url: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type BoothAnswerWithUser = BoothAnswer & {
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+  profile_photo_path: string | null;
+};
+
+// is_open computed at SELECT time against SQLite's own clock, same
+// reasoning as deals.is_active and bop_voting_periods.is_open — never a
+// JS Date, so it can't drift from what the database itself considers
+// "now".
+const BOOTH_QUESTION_SELECT = `
+  SELECT
+    q.id, q.question_text, q.created_by, q.opens_at, q.closes_at, q.created_at,
+    CASE
+      WHEN q.opens_at <= datetime('now')
+       AND (q.closes_at IS NULL OR q.closes_at > datetime('now'))
+      THEN 1 ELSE 0
+    END AS is_open,
+    (SELECT COUNT(*) FROM booth_answers a WHERE a.question_id = q.id) AS answer_count
+  FROM booth_questions q
+`;
+
+export function createBoothQuestion(
+  createdBy: number,
+  questionText: string,
+  opensAt: string | null,
+  closesAt: string | null
+): BoothQuestion {
+  const db = getDb();
+  const info = db
+    .prepare(
+      `INSERT INTO booth_questions (question_text, created_by, opens_at, closes_at)
+       VALUES (?, ?, COALESCE(?, datetime('now')), ?)`
+    )
+    .run(questionText, createdBy, opensAt, closesAt);
+  return getBoothQuestionById(Number(info.lastInsertRowid))!;
+}
+
+export function getBoothQuestionById(id: number): BoothQuestion | undefined {
+  const db = getDb();
+  return db.prepare(`${BOOTH_QUESTION_SELECT} WHERE q.id = ?`).get(id) as BoothQuestion | undefined;
+}
+
+export function listBoothQuestions(limit = 50): BoothQuestion[] {
+  const db = getDb();
+  return db
+    .prepare(`${BOOTH_QUESTION_SELECT} ORDER BY q.opens_at DESC LIMIT ?`)
+    .all(limit) as BoothQuestion[];
+}
+
+// The question members currently see on /booth — the most recently
+// opened question that is still open. Falls back to the most recent
+// question overall (closed or not) so the page has something to show
+// even between questions, mirroring getFeaturedDeal's fallback.
+export function getCurrentBoothQuestion(): BoothQuestion | undefined {
+  const db = getDb();
+  const open = db
+    .prepare(`${BOOTH_QUESTION_SELECT} WHERE is_open = 1 ORDER BY q.opens_at DESC LIMIT 1`)
+    .get() as BoothQuestion | undefined;
+  if (open) return open;
+  return db
+    .prepare(`${BOOTH_QUESTION_SELECT} ORDER BY q.opens_at DESC LIMIT 1`)
+    .get() as BoothQuestion | undefined;
+}
+
+// Admin-only manual close, for a question opened without a closes_at.
+export function closeBoothQuestion(questionId: number): void {
+  const db = getDb();
+  db.prepare(
+    `UPDATE booth_questions SET closes_at = datetime('now') WHERE id = ? AND closes_at IS NULL`
+  ).run(questionId);
+}
+
+const BOOTH_ANSWER_SELECT = `
+  SELECT
+    a.id, a.question_id, a.user_id, a.answer_type, a.answer_text, a.media_url,
+    a.created_at, a.updated_at,
+    u.username, u.first_name, u.last_name, u.profile_photo_path
+  FROM booth_answers a
+  JOIN users u ON u.id = a.user_id
+`;
+
+// One answer per member per question — resubmitting while the question
+// is still open replaces the previous answer rather than adding a
+// second row. Callers are responsible for checking the question is
+// still open before calling this (see the API route).
+export function submitBoothAnswer(
+  questionId: number,
+  userId: number,
+  answerType: BoothAnswerType,
+  answerText: string | null,
+  mediaUrl: string | null
+): BoothAnswerWithUser {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO booth_answers (question_id, user_id, answer_type, answer_text, media_url, updated_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now'))
+     ON CONFLICT(question_id, user_id) DO UPDATE SET
+       answer_type = excluded.answer_type,
+       answer_text = excluded.answer_text,
+       media_url = excluded.media_url,
+       updated_at = datetime('now')`
+  ).run(questionId, userId, answerType, answerText, mediaUrl);
+  return getUserBoothAnswer(questionId, userId)!;
+}
+
+export function getUserBoothAnswer(questionId: number, userId: number): BoothAnswerWithUser | undefined {
+  const db = getDb();
+  return db
+    .prepare(`${BOOTH_ANSWER_SELECT} WHERE a.question_id = ? AND a.user_id = ?`)
+    .get(questionId, userId) as BoothAnswerWithUser | undefined;
+}
+
+export function listBoothAnswersForQuestion(questionId: number, limit = 100): BoothAnswerWithUser[] {
+  const db = getDb();
+  return db
+    .prepare(`${BOOTH_ANSWER_SELECT} WHERE a.question_id = ? ORDER BY a.created_at ASC LIMIT ?`)
+    .all(questionId, limit) as BoothAnswerWithUser[];
 }
