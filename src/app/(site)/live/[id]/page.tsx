@@ -6,6 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import StreamWatchClient from "@/components/StreamWatchClient";
 import PassportVisitBeacon from "@/components/PassportVisitBeacon";
 import PuebloLiveHero from "@/components/PuebloLiveHero";
+import SeeSomethingPromo from "@/components/SeeSomethingPromo";
 import { getCurrentUser } from "@/lib/require-user";
 import {
   getStreamById,
@@ -157,6 +158,7 @@ export default async function StreamDetailPage({
             <div className="row merged20" id="page-contents">
               <div className="col-lg-3">
                 <Sidebar />
+                <SeeSomethingPromo />
               </div>
               <div className="col-lg-9">
                 <PuebloLiveHero liveCount={listStreams("live", null).length} />

@@ -5,6 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import StreamCreateForm from "@/components/StreamCreateForm";
 import StreamsBrowser from "@/components/StreamsBrowser";
 import PuebloLiveHero from "@/components/PuebloLiveHero";
+import SeeSomethingPromo from "@/components/SeeSomethingPromo";
 import { getCurrentUser } from "@/lib/require-user";
 import { listStreams } from "@/lib/db";
 
@@ -28,6 +29,7 @@ export default async function LivePage() {
             <div className="row merged20" id="page-contents">
               <div className="col-lg-3">
                 <Sidebar />
+                <SeeSomethingPromo />
               </div>
               <div className="col-lg-9">
                 <PuebloLiveHero liveCount={liveCount} />
