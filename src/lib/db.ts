@@ -1353,6 +1353,35 @@ export function updateUserNotificationPreferences(
   ).run(marketingEmailsOptIn ? 1 : 0, userId);
 }
 
+// Backs the real "Edit Profile" form — the first/last name, city, and
+// avatar fields a member can change about their own public profile
+// (username/email aren't editable here; those have their own
+// verification/uniqueness concerns and are out of scope for this
+// feature). profilePhotoPath is left alone when the caller passes
+// `undefined` (no new photo submitted) and cleared when `null` is passed
+// explicitly (member removed their photo).
+export function updateUserProfile(
+  userId: number,
+  fields: {
+    firstName: string | null;
+    lastName: string | null;
+    city: string | null;
+    profilePhotoPath?: string | null;
+  }
+): PublicUser | undefined {
+  const db = getDb();
+  if (fields.profilePhotoPath === undefined) {
+    db.prepare(
+      `UPDATE users SET first_name = ?, last_name = ?, city = ?, updated_at = datetime('now') WHERE id = ?`
+    ).run(fields.firstName, fields.lastName, fields.city, userId);
+  } else {
+    db.prepare(
+      `UPDATE users SET first_name = ?, last_name = ?, city = ?, profile_photo_path = ?, updated_at = datetime('now') WHERE id = ?`
+    ).run(fields.firstName, fields.lastName, fields.city, fields.profilePhotoPath, userId);
+  }
+  return getUserById(userId);
+}
+
 export function countUsers(): number {
   const db = getDb();
   const row = db.prepare("SELECT COUNT(*) as n FROM users").get() as { n: number };

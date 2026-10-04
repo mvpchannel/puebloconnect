@@ -175,6 +175,7 @@ export default function Header() {
             <li>
               <a href="#" title="">Account settings</a>
               <ul>
+                <li><Link href="/account-settings" title="">Account Settings</Link></li>
                 <li><Link href="/messages" title="">Messages</Link></li>
               </ul>
             </li>
@@ -286,10 +287,8 @@ export default function Header() {
                     {user.username} {user.role === "admin" && "(admin)"}
                   </span>
                   <Link href="/profile" title=""><i className="ti-user" /> view profile</Link>
-                  {/* STATUS: needs backend/API — edit-profile and account-settings pages
-                      don't exist in this app yet (still static-only in the Phase 0 site). */}
-                  <a href="#" title=""><i className="ti-pencil-alt" /> edit profile</a>
-                  <a href="#" title=""><i className="ti-settings" /> account setting</a>
+                  <Link href="/account-settings#profile" title=""><i className="ti-pencil-alt" /> edit profile</Link>
+                  <Link href="/account-settings" title=""><i className="ti-settings" /> account setting</Link>
                   {user.role === "admin" && (
                     <Link href="/admin" title=""><i className="ti-shield" /> admin</Link>
                   )}
