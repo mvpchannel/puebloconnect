@@ -91,6 +91,12 @@ export default function Header() {
               </ul>
             </li>
             <li>
+              <span>Explore the Pueblo in 3D</span>
+              <ul>
+                <li><Link href="/explore-3d" title="">Explore in 3D</Link></li>
+              </ul>
+            </li>
+            <li>
               <span>Timeline</span>
               <ul>
                 <li><Link href="/profile" title="">Timeline</Link></li>
@@ -134,6 +140,7 @@ export default function Header() {
             <li>
               <a href="#" title="">More pages</a>
               <ul>
+                <li><Link href="/explore-3d" title="">Explore the Pueblo in 3D</Link></li>
                 <li><Link href="/membership" title="">Business Membership</Link></li>
                 <li><Link href="/advertise" title="">Advertise</Link></li>
                 <li><Link href="/terms" title="">Terms &amp; conditions</Link></li>

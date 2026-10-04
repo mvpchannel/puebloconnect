@@ -12,7 +12,7 @@ blocked (both the public npm registry and an internal mirror returned
 means:
 
 - Every `.ts`/`.tsx` file **was** syntax-checked (confirms valid
-  TypeScript/JSX, no unclosed tags or structural mistakes) — 59/59 files
+  TypeScript/JSX, no unclosed tags or structural mistakes) — 63/63 files
   passed.
 - It has **not** been through an actual `next build`, so TypeScript type
   errors against the real `next`/`react` type definitions, any remaining
@@ -307,6 +307,72 @@ missed without the webhook wired up.
   duration and placement, not a recurring plan, so they don't have their
   own checkout flow yet. The page's contact details are the real path to
   buy one today.
+
+## Explore the Pueblo in 3D (Phase 1 prototype)
+
+`/explore-3d` — a browser-based 3D neighborhood members can walk around,
+built with [Three.js](https://threejs.org/). Member-only, gated by
+`middleware.ts` exactly like `/newsfeed` and `/profile` — there is no
+separate login for it.
+
+- **Engine choice**: Three.js over Babylon.js. The scene only needs a
+  handful of primitives, a camera rig and raycasting — none of Babylon's
+  bundled physics/GUI/XR systems — so Three.js ships meaningfully less JS
+  to a phone on first load, and tree-shakes cleanly through Next.js's
+  bundler as a plain ES module package. The reasoning is also written into
+  the top of `src/lib/pueblo3d/engine.ts`.
+- **🟢 Working now**: one neighborhood with streets, sidewalks and a
+  plaza; Pueblo Connect Headquarters and The Daily Pueblo buildings; five
+  sample local-business buildings; a controllable avatar (WASD/arrow keys
+  + drag-to-look on desktop, an on-screen D-pad + drag-to-look on mobile);
+  clicking/tapping a building to open an info card; a map panel that
+  teleports the avatar to any building; the avatar's nameplate shows the
+  real logged-in member's username (from `/api/auth/session`), not an
+  invented name.
+- **🟡 Needs backend/API**: the five business buildings are sample content
+  — Pueblo Connect has no business-directory backend yet (see
+  `FUNCTIONALITY_STATUS.md`), so there's nothing real to populate them
+  with. `src/lib/pueblo3d/places.ts` is typed and documented so swapping
+  in real business data later only means changing where `PLACES` comes
+  from, not the engine. Business profile pages and Pueblo Deals don't
+  exist yet either — the business info card says so rather than linking
+  somewhere fake.
+- **🟠 Needs backend + a realtime service**: multiple members visible at
+  once, real-time movement, and member-to-member chat all need a
+  WebSocket (or similar) presence server with server-authoritative
+  identity — not built in Phase 1. The engine already has the seam for
+  this: `upsertRemotePlayer(state)` / `removeRemotePlayer(id)` render a
+  labeled avatar for any other member's position without any other change
+  to the render loop, so a future presence client just needs to call
+  those as updates arrive over the wire.
+- **⚪ Future enhancement**: events, a working Pueblo Live video screen
+  (today it's a static placeholder panel reading "Coming soon" — a real
+  3D object, not a fake live feed), moderation/reporting tools, and
+  swapping the current primitive-geometry buildings for lightweight GLB
+  models with LOD/lazy loading once there's real art to load.
+- **Reviewed against a user-supplied reference** (`Original 3D Social
+  City Starter`, a generic third-party example, not Pueblo-branded): its
+  orbit-camera "look around a static city" approach wasn't used, since the
+  project brief specifically asks for a controllable walking avatar; its
+  UI ideas for a later phase — an online-members list and a venue/profile
+  modal — line up well with the `upsertRemotePlayer` seam above and are
+  worth building toward once multiplayer presence exists.
+- **Performance**: renderer pixel ratio is capped at 1.6x regardless of
+  device pixel ratio (the most common cause of a WebGL page overheating a
+  phone), and the scene uses only a few dozen low-poly primitives — no
+  model loading yet to optimize further.
+- **Not yet build-verified** for the same reason as the rest of this app
+  (see the top of this README): `three` was added to `package.json` but
+  could not actually be installed here (both the npm registry and the
+  jsDelivr CDN are blocked in this sandbox). What *was* verified: every
+  file passes the TypeScript syntax check described above, and
+  `src/lib/pueblo3d/engine.ts`'s actual control flow (mount, click a
+  building, teleport, mobile-pad movement, add/remove a remote player,
+  unmount/dispose) was executed end-to-end in a real headless browser
+  against a hand-written stand-in for the three.js API surface this code
+  calls, to catch logic bugs independent of the real library. It has not
+  been visually verified rendering real WebGL — do that first via
+  `npm run dev` → `/explore-3d` once npm access is available.
 
 ## Known gap: most features still have no backend
 
