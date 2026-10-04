@@ -96,6 +96,10 @@ const USER_COLUMN_MIGRATIONS: { name: string; ddl: string }[] = [
     ddl: "ALTER TABLE users ADD COLUMN location_source TEXT CHECK (location_source IN ('manual', 'ip'))",
   },
   { name: "location_updated_at", ddl: "ALTER TABLE users ADD COLUMN location_updated_at TEXT" },
+  // Wall/profile page fields — see /profile/[userId]/page.tsx. Both
+  // optional, nullable, editable from Account Settings.
+  { name: "bio", ddl: "ALTER TABLE users ADD COLUMN bio TEXT" },
+  { name: "cover_photo_path", ddl: "ALTER TABLE users ADD COLUMN cover_photo_path TEXT" },
 ];
 
 function columnExists(db: DatabaseSync, table: string, column: string): boolean {
@@ -1121,6 +1125,8 @@ export type User = {
   location_country: string | null;
   location_source: "manual" | "ip" | null;
   location_updated_at: string | null;
+  bio: string | null;
+  cover_photo_path: string | null;
 };
 
 export type PublicUser = Omit<User, "password_hash">;
@@ -1130,7 +1136,7 @@ const PUBLIC_USER_COLUMNS =
   "profile_photo_path, email_verified_at, account_status, updated_at, " +
   "last_login_at, session_version, marketing_emails_opt_in, " +
   "latitude, longitude, location_city, location_region, location_country, " +
-  "location_source, location_updated_at";
+  "location_source, location_updated_at, bio, cover_photo_path";
 
 export function createUser(
   username: string,
@@ -1379,6 +1385,9 @@ export function updateUserNotificationPreferences(
 // feature). profilePhotoPath is left alone when the caller passes
 // `undefined` (no new photo submitted) and cleared when `null` is passed
 // explicitly (member removed their photo).
+// bio and coverPhotoPath follow the same omit/null/string convention as
+// profilePhotoPath: left alone when `undefined`, cleared when `null`,
+// replaced when a string is passed.
 export function updateUserProfile(
   userId: number,
   fields: {
@@ -1386,18 +1395,28 @@ export function updateUserProfile(
     lastName: string | null;
     city: string | null;
     profilePhotoPath?: string | null;
+    bio?: string | null;
+    coverPhotoPath?: string | null;
   }
 ): PublicUser | undefined {
   const db = getDb();
-  if (fields.profilePhotoPath === undefined) {
-    db.prepare(
-      `UPDATE users SET first_name = ?, last_name = ?, city = ?, updated_at = datetime('now') WHERE id = ?`
-    ).run(fields.firstName, fields.lastName, fields.city, userId);
-  } else {
-    db.prepare(
-      `UPDATE users SET first_name = ?, last_name = ?, city = ?, profile_photo_path = ?, updated_at = datetime('now') WHERE id = ?`
-    ).run(fields.firstName, fields.lastName, fields.city, fields.profilePhotoPath, userId);
+  const setClauses = ["first_name = ?", "last_name = ?", "city = ?"];
+  const params: (string | number | null)[] = [fields.firstName, fields.lastName, fields.city];
+  if (fields.profilePhotoPath !== undefined) {
+    setClauses.push("profile_photo_path = ?");
+    params.push(fields.profilePhotoPath);
   }
+  if (fields.bio !== undefined) {
+    setClauses.push("bio = ?");
+    params.push(fields.bio);
+  }
+  if (fields.coverPhotoPath !== undefined) {
+    setClauses.push("cover_photo_path = ?");
+    params.push(fields.coverPhotoPath);
+  }
+  setClauses.push("updated_at = datetime('now')");
+  params.push(userId);
+  db.prepare(`UPDATE users SET ${setClauses.join(", ")} WHERE id = ?`).run(...params);
   return getUserById(userId);
 }
 

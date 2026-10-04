@@ -73,6 +73,8 @@ export default async function AccountSettingsPage() {
                           lastName={user.last_name ?? ""}
                           city={user.city ?? ""}
                           profilePhotoPath={user.profile_photo_path}
+                          bio={user.bio ?? ""}
+                          coverPhotoPath={user.cover_photo_path}
                         />
                       </div>
                     </div>

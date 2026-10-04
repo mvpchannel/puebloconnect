@@ -22,7 +22,30 @@ export async function GET(req: NextRequest) {
     lastName: user.last_name,
     city: user.city,
     profilePhotoPath: user.profile_photo_path,
+    bio: user.bio,
+    coverPhotoPath: user.cover_photo_path,
   });
+}
+
+// Shared by the avatar and cover-photo upload paths below — same
+// validation (PNG/JPEG/WEBP, 3MB cap), different destination folder.
+function saveDataUrlImage(dataUrl: string, subdir: string): string | { error: string } {
+  const match = /^data:(image\/(png|jpeg|jpg|webp));base64,(.+)$/.exec(dataUrl);
+  if (!match) {
+    return { error: "Image must be a PNG, JPEG, or WEBP file." };
+  }
+  const [, , ext, base64Data] = match;
+  const buffer = Buffer.from(base64Data, "base64");
+  const MAX_BYTES = 3 * 1024 * 1024; // 3MB
+  if (buffer.length > MAX_BYTES) {
+    return { error: "Image must be smaller than 3MB." };
+  }
+  const uploadsDir = path.join(process.cwd(), "public", "uploads", subdir);
+  if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
+  const safeExt = ext === "jpeg" ? "jpg" : ext;
+  const fileName = `${randomUUID()}.${safeExt}`;
+  writeFileSync(path.join(uploadsDir, fileName), buffer);
+  return `/uploads/${subdir}/${fileName}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -36,10 +59,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  const { firstName, lastName, city, profilePhotoDataUrl, removePhoto } = (body ?? {}) as Record<
-    string,
-    unknown
-  >;
+  const {
+    firstName,
+    lastName,
+    city,
+    profilePhotoDataUrl,
+    removePhoto,
+    bio,
+    coverPhotoDataUrl,
+    removeCoverPhoto,
+  } = (body ?? {}) as Record<string, unknown>;
 
   if (typeof firstName !== "string" || typeof lastName !== "string") {
     return NextResponse.json({ error: "First and last name are required." }, { status: 400 });
@@ -54,40 +83,40 @@ export async function POST(req: NextRequest) {
   }
   const cleanCity = typeof city === "string" ? city.trim().slice(0, 120) : "";
 
-  // profilePhotoPath stays `undefined` (leave existing photo alone)
-  // unless the member either removed it or submitted a new one — same
-  // 3-state handling the update function expects.
+  // profilePhotoPath/coverPhotoPath stay `undefined` (leave existing image
+  // alone) unless the member either removed it or submitted a new one —
+  // same 3-state handling the update function expects.
   let profilePhotoPath: string | null | undefined = undefined;
-
   if (removePhoto === true) {
     profilePhotoPath = null;
   } else if (typeof profilePhotoDataUrl === "string" && profilePhotoDataUrl.length > 0) {
-    const match = /^data:(image\/(png|jpeg|jpg|webp));base64,(.+)$/.exec(profilePhotoDataUrl);
-    if (!match) {
-      return NextResponse.json(
-        { error: "Profile photo must be a PNG, JPEG, or WEBP image." },
-        { status: 400 }
-      );
+    const result = saveDataUrlImage(profilePhotoDataUrl, "avatars");
+    if (typeof result !== "string") {
+      return NextResponse.json({ error: `Profile photo: ${result.error}` }, { status: 400 });
     }
-    const [, , ext, base64Data] = match;
-    const buffer = Buffer.from(base64Data, "base64");
-    const MAX_BYTES = 3 * 1024 * 1024; // 3MB
-    if (buffer.length > MAX_BYTES) {
-      return NextResponse.json({ error: "Profile photo must be smaller than 3MB." }, { status: 400 });
-    }
-    const uploadsDir = path.join(process.cwd(), "public", "uploads", "avatars");
-    if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
-    const safeExt = ext === "jpeg" ? "jpg" : ext;
-    const fileName = `${randomUUID()}.${safeExt}`;
-    writeFileSync(path.join(uploadsDir, fileName), buffer);
-    profilePhotoPath = `/uploads/avatars/${fileName}`;
+    profilePhotoPath = result;
   }
+
+  let coverPhotoPath: string | null | undefined = undefined;
+  if (removeCoverPhoto === true) {
+    coverPhotoPath = null;
+  } else if (typeof coverPhotoDataUrl === "string" && coverPhotoDataUrl.length > 0) {
+    const result = saveDataUrlImage(coverPhotoDataUrl, "covers");
+    if (typeof result !== "string") {
+      return NextResponse.json({ error: `Cover photo: ${result.error}` }, { status: 400 });
+    }
+    coverPhotoPath = result;
+  }
+
+  const cleanBio = typeof bio === "string" ? bio.trim().slice(0, 500) : undefined;
 
   const updated = updateUserProfile(session.sub, {
     firstName: cleanFirst,
     lastName: cleanLast,
     city: cleanCity || null,
     profilePhotoPath,
+    bio: typeof bio === "string" ? (cleanBio || null) : undefined,
+    coverPhotoPath,
   });
 
   return NextResponse.json({ user: updated });

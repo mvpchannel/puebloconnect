@@ -1,126 +1,43 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import Sidebar from "@/components/Sidebar";
-import PostComposer from "@/components/PostComposer";
-import PostCard from "@/components/PostCard";
 import { getCurrentUser } from "@/lib/require-user";
-import { getUserById, listPostsByAuthor, listFriends } from "@/lib/db";
-import { formatRelativeTime } from "@/lib/time";
 
 export const metadata: Metadata = {
   title: "Timeline",
 };
 
-// Real posts now: this member's own posts (any target), newest first —
-// see src/lib/db.ts listPostsByAuthor. The page still works logged out
-// (an anonymous visitor just can't post), same honest-placeholder pattern
-// as the rest of this app for the parts not built yet (followers, photos,
-// videos, friends tabs).
+// /profile (no id) is just a stable "my own page" shortcut — the real
+// wall, shared by every member, lives at /profile/[userId] (see that
+// route). A logged-in visitor is sent straight to their own id; a
+// logged-out visitor has no "own page" to show, so they get a simple
+// prompt to log in instead of the old placeholder timeline.
 export default async function ProfilePage() {
   const session = await getCurrentUser();
-  const user = session ? getUserById(session.sub) : null;
-  const posts = session ? listPostsByAuthor(session.sub, session.sub) : [];
-  const friendCount = session ? listFriends(session.sub).length : 0;
-  const displayName = user
-    ? [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username
-    : "Pueblo Connect";
+  if (session) {
+    redirect(`/profile/${session.sub}`);
+  }
 
   return (
     <>
       <Header />
-
-      <section>
-        <div className="feature-photo">
-          <figure>
-            <img src="/images/resources/timeline-1.jpg" alt="" />
-          </figure>
-          <div className="add-btn">
-            <span>{friendCount} friend{friendCount === 1 ? "" : "s"}</span>
-            {/* This page is always the signed-in member's own timeline (no
-                /profile/[username] route exists yet — see Timeline nav tab
-                below), so there's no one here to "Add Friend" to. Link to
-                the real friends page instead of a dead/self-targeting button. */}
-            <a href="/friends" title="" data-ripple="">Manage Friends</a>
-          </div>
-          <div className="container-fluid">
-            <div className="row merged">
-              <div className="col-lg-2 col-sm-3">
-                <div className="user-avatar">
-                  <figure>
-                    <img src="/images/resources/user-avatar.jpg" alt="" />
-                  </figure>
-                </div>
-              </div>
-              <div className="col-lg-10 col-sm-9">
-                <div className="timeline-info">
-                  <ul>
-                    <li className="admin-name">
-                      <h5>{displayName}&nbsp;</h5>
-                      <span>Member</span>
-                    </li>
-                    <li>
-                      <a className="active" href="#" title="" data-ripple="">Timeline</a>
-                      <a className="" href="#" title="" data-ripple="">Photos</a>
-                      <a className="" href="#" title="" data-ripple="">Videos</a>
-                      <a className="" href="/friends" title="" data-ripple="">Friends</a>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
       <section>
         <div className="gap gray-bg">
           <div className="container">
             <div className="row">
-              <div className="col-lg-12">
-                <div className="row merged20" id="page-contents">
-                  <div className="col-lg-3">
-                    <Sidebar />
-                  </div>
-                  <div className="col-lg-6">
-                    <PostComposer isLoggedIn={Boolean(session)} />
-                    <div className="loadMore">
-                      {session && posts.length === 0 && (
-                        <div className="central-meta item">
-                          <div style={{ padding: "24px", textAlign: "center", color: "#888" }}>
-                            You haven&apos;t posted anything yet.
-                          </div>
-                        </div>
-                      )}
-                      {posts.map((post) => (
-                        <PostCard
-                          key={post.id}
-                          postId={post.id}
-                          authorId={post.author_id}
-                          currentUserId={session?.sub ?? null}
-                          isAdmin={session?.role === "admin"}
-                          authorName={displayName}
-                          authorImage={
-                            post.author_profile_photo_path ||
-                            "/images/defaults/default-avatar-male.jpg"
-                          }
-                          publishedLabel={formatRelativeTime(post.created_at)}
-                          text={post.body}
-                          initialLikeCount={post.like_count}
-                          initialLiked={Boolean(post.liked_by_viewer)}
-                          initialCommentCount={post.comment_count}
-                          isLoggedIn={Boolean(session)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
+              <div className="col-lg-12" style={{ textAlign: "center", padding: "60px 20px" }}>
+                <p style={{ color: "#888", marginBottom: 16 }}>
+                  Log in to see your own timeline.
+                </p>
+                <a className="mtr-btn signin" href="/login">
+                  <span>Log in</span>
+                </a>
               </div>
             </div>
           </div>
         </div>
       </section>
-
       <Footer />
     </>
   );

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 type FriendRequest = {
   id: number;
@@ -208,7 +209,7 @@ export default function FriendsClient({
               key={f.userId}
               style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 0" }}
             >
-              <span>{f.name}</span>
+              <Link href={`/profile/${f.userId}`} title="">{f.name}</Link>
               <div style={{ display: "flex", gap: 8 }}>
                 <a className="mtr-btn signin" href={`/messages?to=${f.userId}`}>
                   <span>Message</span>

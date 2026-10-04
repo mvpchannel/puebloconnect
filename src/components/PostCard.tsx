@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 
 type PostCardProps = {
   postId: number;
@@ -187,7 +188,7 @@ export default function PostCard({
             <img src={authorImage} alt="" />
           </figure>
           <div className="friend-name">
-            <ins><a href="#" title="">{authorName}</a></ins>
+            <ins><Link href={`/profile/${authorId}`} title="">{authorName}</Link></ins>
             <span>published: {publishedLabel}</span>
           </div>
           {canDelete && (
