@@ -12,6 +12,8 @@
  * /sitemap-page, …) without affecting /admin, which has its own layout
  * and CSS stack — see src/app/admin/layout.tsx.
  */
+import InstallAppButton from "@/components/InstallAppButton";
+
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
     <>
@@ -22,6 +24,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
       <div className="theme-layout">
         <div className="postoverlay" />
         {children}
+        <InstallAppButton />
       </div>
     </>
   );

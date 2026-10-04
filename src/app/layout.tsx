@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 
 /**
  * Root layout — deliberately minimal. This app has two visually separate
@@ -20,7 +20,18 @@ export const metadata: Metadata = {
     "Connect Local. Shop Local. Grow Together. A community-focused social network connecting Pueblo residents and local businesses, powered by The Daily Pueblo.",
   icons: {
     icon: "/images/fav.png",
+    apple: "/icons/icon-192.png",
   },
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Pueblo Connect",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#1f6feb",
 };
 
 export default function RootLayout({

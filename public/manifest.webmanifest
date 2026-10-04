@@ -1,0 +1,15 @@
+{
+  "name": "Pueblo Connect",
+  "short_name": "Pueblo Connect",
+  "description": "Connect Local. Shop Local. Grow Together. A community-focused social network connecting Pueblo residents and local businesses, powered by The Daily Pueblo.",
+  "start_url": "/newsfeed",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1f6feb",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
