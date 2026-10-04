@@ -46,6 +46,10 @@ export default function Sidebar() {
             <i className="ti-calendar" />
             <Link href="/events" title="">Events</Link>
           </li>
+          <li>
+            <i className="ti-tag" />
+            <Link href="/deals" title="">Pueblo Deals</Link>
+          </li>
         </ul>
       </div>
     </aside>

@@ -9,6 +9,7 @@ import PostCard from "@/components/PostCard";
 import BusinessFollowButton from "@/components/BusinessFollowButton";
 import BusinessReviewsPanel from "@/components/BusinessReviewsPanel";
 import BusinessOwnerPanel from "@/components/BusinessOwnerPanel";
+import DealClaimButton from "@/components/DealClaimButton";
 import { getCurrentUser } from "@/lib/require-user";
 import {
   getBusinessBySlug,
@@ -20,6 +21,9 @@ import {
   listBusinessJobs,
   listStreamsForBusiness,
   listEventsForBusiness,
+  listActiveDealsForBusiness,
+  listAllDealsForBusiness,
+  hasClaimedDeal,
 } from "@/lib/db";
 import { formatRelativeTime } from "@/lib/time";
 
@@ -53,6 +57,8 @@ export default async function BusinessChannelPage({
   const jobs = listBusinessJobs(business.id);
   const streams = listStreamsForBusiness(business.id, session?.sub ?? null, 5);
   const events = listEventsForBusiness(business.id);
+  const activeDeals = listActiveDealsForBusiness(business.id);
+  const allDeals = isOwner ? listAllDealsForBusiness(business.id) : [];
 
   const shapedReviews = reviews.map((r) => ({
     id: r.id,
@@ -128,6 +134,40 @@ export default async function BusinessChannelPage({
                       </div>
                     </div>
 
+                    {activeDeals.length > 0 && (
+                      <div className="widget stick-widget" style={{ marginTop: 20 }}>
+                        <h4 className="widget-title">Deals</h4>
+                        <div style={{ padding: "0 16px 16px" }}>
+                          {activeDeals.map((deal) => (
+                            <div key={deal.id} style={{ marginBottom: 12, paddingBottom: 10, borderBottom: "1px solid #eee" }}>
+                              <div style={{ fontSize: 13, marginBottom: 4 }}>
+                                {deal.type === "flash" && <strong style={{ color: "#e02020" }}>🔥 FLASH DEAL </strong>}
+                                <strong>{deal.title}</strong> — {deal.discount_text}
+                              </div>
+                              {deal.type === "flash" && deal.expires_at && (
+                                <div style={{ fontSize: 12, color: "#999", marginBottom: 6 }}>
+                                  Expires {new Date(deal.expires_at).toLocaleString(undefined, {
+                                    month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+                                  })}
+                                </div>
+                              )}
+                              {session && !isOwner && (
+                                <DealClaimButton
+                                  businessSlug={business.slug}
+                                  dealId={deal.id}
+                                  isLoggedIn={Boolean(session)}
+                                  initialClaimed={hasClaimedDeal(deal.id, session.sub)}
+                                />
+                              )}
+                              {!session && (
+                                <Link href="/login" title="" style={{ fontSize: 12 }}>Log in to claim</Link>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
                     {menuItems.length > 0 && (
                       <div className="widget stick-widget" style={{ marginTop: 20 }}>
                         <h4 className="widget-title">Menu &amp; services</h4>
@@ -185,7 +225,22 @@ export default async function BusinessChannelPage({
                       </div>
                     )}
 
-                    {isOwner && <BusinessOwnerPanel slug={business.slug} menuItems={menuItems} jobs={jobs} />}
+                    {isOwner && (
+                      <BusinessOwnerPanel
+                        slug={business.slug}
+                        menuItems={menuItems}
+                        jobs={jobs}
+                        deals={allDeals.map((d) => ({
+                          id: d.id,
+                          title: d.title,
+                          discountText: d.discount_text,
+                          type: d.type,
+                          expiresAt: d.expires_at,
+                          claimCount: d.claim_count,
+                          isActive: Boolean(d.is_active),
+                        }))}
+                      />
+                    )}
 
                     <BusinessReviewsPanel
                       slug={business.slug}

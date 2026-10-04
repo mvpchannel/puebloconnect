@@ -17,10 +17,21 @@ export type BusinessJobData = {
   description: string | null;
 };
 
+export type BusinessDealData = {
+  id: number;
+  title: string;
+  discountText: string;
+  type: "standard" | "flash";
+  expiresAt: string | null;
+  claimCount: number;
+  isActive: boolean;
+};
+
 type BusinessOwnerPanelProps = {
   slug: string;
   menuItems: BusinessMenuItemData[];
   jobs: BusinessJobData[];
+  deals: BusinessDealData[];
 };
 
 function formatPrice(cents: number | null): string {
@@ -32,7 +43,7 @@ function formatPrice(cents: number | null): string {
 // postings. Real backend: /api/businesses/:slug/menu(/:itemId) and
 // /api/businesses/:slug/jobs(/:jobId/close), backed by
 // business_menu_items / business_jobs in src/lib/db.ts.
-export default function BusinessOwnerPanel({ slug, menuItems, jobs }: BusinessOwnerPanelProps) {
+export default function BusinessOwnerPanel({ slug, menuItems, jobs, deals }: BusinessOwnerPanelProps) {
   const router = useRouter();
   const [section, setSection] = useState<"menu" | "service">("menu");
   const [itemName, setItemName] = useState("");
@@ -40,6 +51,10 @@ export default function BusinessOwnerPanel({ slug, menuItems, jobs }: BusinessOw
   const [itemPrice, setItemPrice] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [jobDescription, setJobDescription] = useState("");
+  const [dealTitle, setDealTitle] = useState("");
+  const [dealDiscountText, setDealDiscountText] = useState("");
+  const [dealType, setDealType] = useState<"standard" | "flash">("standard");
+  const [dealExpiresAt, setDealExpiresAt] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -116,6 +131,48 @@ export default function BusinessOwnerPanel({ slug, menuItems, jobs }: BusinessOw
     setBusy(true);
     try {
       await fetch(`/api/businesses/${slug}/jobs/${jobId}/close`, { method: "POST" });
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addDeal(e: FormEvent) {
+    e.preventDefault();
+    if (!dealTitle.trim() || !dealDiscountText.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/businesses/${slug}/deals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: dealTitle.trim(),
+          discountText: dealDiscountText.trim(),
+          type: dealType,
+          expiresAt: dealExpiresAt ? new Date(dealExpiresAt).toISOString() : null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Couldn't post that deal.");
+        return;
+      }
+      setDealTitle("");
+      setDealDiscountText("");
+      setDealExpiresAt("");
+      router.refresh();
+    } catch {
+      setError("Couldn't reach the server.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function endDeal(dealId: number) {
+    setBusy(true);
+    try {
+      await fetch(`/api/businesses/${slug}/deals/${dealId}/deactivate`, { method: "POST" });
       router.refresh();
     } finally {
       setBusy(false);
@@ -221,6 +278,74 @@ export default function BusinessOwnerPanel({ slug, menuItems, jobs }: BusinessOw
           />
           <button className="mtr-btn signup" type="submit" disabled={busy || !jobTitle.trim()}>
             <span>Post job</span>
+          </button>
+        </form>
+
+        <h5 style={{ marginBottom: 8 }}>Deals</h5>
+        {deals.filter((d) => d.isActive).length === 0 && (
+          <p style={{ color: "#888", fontSize: 13 }}>No active deals.</p>
+        )}
+        {deals.filter((d) => d.isActive).map((deal) => (
+          <div key={deal.id} style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <span style={{ fontSize: 13 }}>
+              {deal.type === "flash" ? "🔥 " : ""}
+              {deal.title} — {deal.discountText} ({deal.claimCount} claimed)
+            </span>
+            <button
+              type="button"
+              className="mtr-btn signin"
+              style={{ padding: "2px 8px", fontSize: 11 }}
+              disabled={busy}
+              onClick={() => endDeal(deal.id)}
+            >
+              <span>End deal</span>
+            </button>
+          </div>
+        ))}
+        <form onSubmit={addDeal} style={{ marginTop: 10 }}>
+          <select
+            value={dealType}
+            onChange={(e) => setDealType(e.target.value as "standard" | "flash")}
+            style={{ marginBottom: 6, display: "block" }}
+          >
+            <option value="standard">Standard deal</option>
+            <option value="flash">Flash deal (expires soon)</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Title (e.g. Weekend Special)"
+            maxLength={100}
+            value={dealTitle}
+            onChange={(e) => setDealTitle(e.target.value)}
+            style={{ width: "100%", marginBottom: 6 }}
+          />
+          <input
+            type="text"
+            placeholder="Discount (e.g. 25% off, $8.99)"
+            maxLength={50}
+            value={dealDiscountText}
+            onChange={(e) => setDealDiscountText(e.target.value)}
+            style={{ width: "100%", marginBottom: 6 }}
+          />
+          {dealType === "flash" && (
+            <>
+              <label style={{ display: "block", fontSize: 12, marginBottom: 4 }}>
+                Expires (within 24 hours)
+              </label>
+              <input
+                type="datetime-local"
+                value={dealExpiresAt}
+                onChange={(e) => setDealExpiresAt(e.target.value)}
+                style={{ width: "100%", marginBottom: 6 }}
+              />
+            </>
+          )}
+          <button
+            className="mtr-btn signup"
+            type="submit"
+            disabled={busy || !dealTitle.trim() || !dealDiscountText.trim() || (dealType === "flash" && !dealExpiresAt)}
+          >
+            <span>Post deal</span>
           </button>
         </form>
       </div>

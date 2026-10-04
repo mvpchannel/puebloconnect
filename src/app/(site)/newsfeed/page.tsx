@@ -1,11 +1,13 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Sidebar from "@/components/Sidebar";
 import PostComposer from "@/components/PostComposer";
 import PostCard from "@/components/PostCard";
+import DealClaimButton from "@/components/DealClaimButton";
 import { getCurrentUser } from "@/lib/require-user";
-import { listPosts } from "@/lib/db";
+import { listPosts, getFeaturedDeal, hasClaimedDeal } from "@/lib/db";
 import { formatRelativeTime } from "@/lib/time";
 
 export const metadata: Metadata = {
@@ -20,6 +22,7 @@ export const metadata: Metadata = {
 export default async function NewsfeedPage() {
   const session = await getCurrentUser();
   const posts = listPosts(session?.sub ?? null, "feed", null);
+  const dealOfTheDay = getFeaturedDeal();
 
   return (
     <>
@@ -30,6 +33,31 @@ export default async function NewsfeedPage() {
             <div className="row merged20" id="page-contents">
               <div className="col-lg-3">
                 <Sidebar />
+                {dealOfTheDay && (
+                  <div className="widget stick-widget" style={{ marginTop: 20 }}>
+                    <h4 className="widget-title">🔥 Deal of the Day</h4>
+                    <div style={{ padding: "0 16px 16px" }}>
+                      <p style={{ marginBottom: 4 }}>
+                        <strong>{dealOfTheDay.title}</strong> — {dealOfTheDay.discount_text}
+                      </p>
+                      <p style={{ fontSize: 13, color: "#999", marginBottom: 10 }}>
+                        <Link href={`/businesses/${dealOfTheDay.business_slug}`} title="">
+                          {dealOfTheDay.business_name}
+                        </Link>
+                      </p>
+                      {session ? (
+                        <DealClaimButton
+                          businessSlug={dealOfTheDay.business_slug}
+                          dealId={dealOfTheDay.id}
+                          isLoggedIn={Boolean(session)}
+                          initialClaimed={hasClaimedDeal(dealOfTheDay.id, session.sub)}
+                        />
+                      ) : (
+                        <Link href="/login" title="" style={{ fontSize: 12 }}>Log in to claim</Link>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
               <div className="col-lg-6">
                 <PostComposer isLoggedIn={Boolean(session)} />

@@ -625,6 +625,43 @@ function getDb(): DatabaseSync {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_event_checkins_event ON event_checkins(event_id)`);
 
+    // Pueblo Deals + Flash Deals. A deal belongs to a business channel.
+    // type='flash' is a time-limited deal (meant to expire quickly, e.g.
+    // "2 hours"); type='standard' is a regular, longer-lived deal — both
+    // just differ in how expires_at is used, enforced by the API layer,
+    // not the schema. `featured` marks a deal eligible to be picked as
+    // the homepage's "Deal of the Day" (see getFeaturedDeal below).
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS deals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        business_id INTEGER NOT NULL REFERENCES businesses(id),
+        title TEXT NOT NULL,
+        description TEXT,
+        discount_text TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'standard' CHECK (type IN ('standard', 'flash')),
+        starts_at TEXT NOT NULL DEFAULT (datetime('now')),
+        expires_at TEXT,
+        featured INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        deactivated_at TEXT
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_deals_business ON deals(business_id)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_deals_active ON deals(deactivated_at, expires_at)`);
+
+    // One claim per member per deal — claiming twice just confirms the
+    // same claim, same idempotency pattern as event check-ins.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS deal_claims (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        deal_id INTEGER NOT NULL REFERENCES deals(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        claimed_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(deal_id, user_id)
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_deal_claims_deal ON deal_claims(deal_id)`);
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -2973,4 +3010,188 @@ export function listEventCheckins(eventId: number, limit = 100): EventCheckin[] 
        LIMIT ?`
     )
     .all(eventId, limit) as EventCheckin[];
+}
+
+// ---------------------------------------------------------------------
+// Pueblo Deals + Flash Deals. A deal belongs to a business channel;
+// "active" means not deactivated, started (starts_at <= now), and not
+// expired (expires_at IS NULL OR expires_at > now). Claiming tracks who
+// redeemed it — real foot traffic a business can see, not just a static
+// coupon anyone could screenshot and reuse indefinitely elsewhere.
+
+export type DealType = "standard" | "flash";
+
+export type Deal = {
+  id: number;
+  business_id: number;
+  title: string;
+  description: string | null;
+  discount_text: string;
+  type: DealType;
+  starts_at: string;
+  expires_at: string | null;
+  featured: number;
+  created_at: string;
+  deactivated_at: string | null;
+};
+
+export type DealWithMeta = Deal & {
+  business_name: string;
+  business_slug: string;
+  claim_count: number;
+  is_active: number;
+};
+
+const DEAL_SELECT = `
+  SELECT
+    d.id, d.business_id, d.title, d.description, d.discount_text, d.type,
+    d.starts_at, d.expires_at, d.featured, d.created_at, d.deactivated_at,
+    b.name AS business_name, b.slug AS business_slug,
+    (SELECT COUNT(*) FROM deal_claims dc WHERE dc.deal_id = d.id) AS claim_count,
+    (CASE
+       WHEN d.deactivated_at IS NOT NULL THEN 0
+       WHEN d.starts_at > datetime('now') THEN 0
+       WHEN d.expires_at IS NOT NULL AND d.expires_at <= datetime('now') THEN 0
+       ELSE 1
+     END) AS is_active
+  FROM deals d
+  JOIN businesses b ON b.id = d.business_id
+`;
+
+export function createDeal(
+  businessId: number,
+  title: string,
+  description: string | null,
+  discountText: string,
+  type: DealType,
+  expiresAt: string | null,
+  featured = false
+): DealWithMeta {
+  const db = getDb();
+  const info = db
+    .prepare(
+      `INSERT INTO deals (business_id, title, description, discount_text, type, expires_at, featured)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(businessId, title, description, discountText, type, expiresAt, featured ? 1 : 0);
+  return getDealById(Number(info.lastInsertRowid))!;
+}
+
+export function getDealById(id: number): DealWithMeta | undefined {
+  const db = getDb();
+  return db.prepare(`${DEAL_SELECT} WHERE d.id = ?`).get(id) as DealWithMeta | undefined;
+}
+
+export function listActiveDealsForBusiness(businessId: number): DealWithMeta[] {
+  const db = getDb();
+  return (db.prepare(`${DEAL_SELECT} WHERE d.business_id = ? ORDER BY d.created_at DESC`).all(
+    businessId
+  ) as DealWithMeta[]).filter((d) => d.is_active);
+}
+
+export function listAllDealsForBusiness(businessId: number): DealWithMeta[] {
+  const db = getDb();
+  return db
+    .prepare(`${DEAL_SELECT} WHERE d.business_id = ? ORDER BY d.created_at DESC`)
+    .all(businessId) as DealWithMeta[];
+}
+
+// Site-wide active deals, flash deals first (soonest-expiring first, so
+// a member sees the most urgent ones), then standard deals newest first.
+export function listActiveDeals(limit = 50): DealWithMeta[] {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `${DEAL_SELECT}
+       WHERE d.deactivated_at IS NULL
+         AND d.starts_at <= datetime('now')
+         AND (d.expires_at IS NULL OR d.expires_at > datetime('now'))
+       ORDER BY (d.type = 'flash') DESC,
+                CASE WHEN d.type = 'flash' THEN d.expires_at ELSE NULL END ASC,
+                d.created_at DESC
+       LIMIT ?`
+    )
+    .all(limit) as DealWithMeta[];
+  return rows;
+}
+
+// The homepage "Deal of the Day" — the most recently created active
+// deal marked `featured`, falling back to the most recently created
+// active deal overall so the homepage isn't empty just because no one
+// has explicitly featured anything yet.
+export function getFeaturedDeal(): DealWithMeta | undefined {
+  const db = getDb();
+  const featured = db
+    .prepare(
+      `${DEAL_SELECT}
+       WHERE d.featured = 1 AND d.deactivated_at IS NULL
+         AND d.starts_at <= datetime('now')
+         AND (d.expires_at IS NULL OR d.expires_at > datetime('now'))
+       ORDER BY d.created_at DESC
+       LIMIT 1`
+    )
+    .get() as DealWithMeta | undefined;
+  if (featured) return featured;
+  return db
+    .prepare(
+      `${DEAL_SELECT}
+       WHERE d.deactivated_at IS NULL
+         AND d.starts_at <= datetime('now')
+         AND (d.expires_at IS NULL OR d.expires_at > datetime('now'))
+       ORDER BY d.created_at DESC
+       LIMIT 1`
+    )
+    .get() as DealWithMeta | undefined;
+}
+
+// Ends a deal early (e.g. a flash deal's stock ran out before its
+// timer did). Owner-checked by the API layer, not here.
+export function deactivateDeal(dealId: number): void {
+  const db = getDb();
+  db.prepare(
+    "UPDATE deals SET deactivated_at = datetime('now') WHERE id = ? AND deactivated_at IS NULL"
+  ).run(dealId);
+}
+
+// Idempotent — claiming twice just confirms the same claim, same
+// pattern as checkInToEvent/followBusiness.
+export function claimDeal(dealId: number, userId: number): void {
+  const db = getDb();
+  const existing = db
+    .prepare("SELECT id FROM deal_claims WHERE deal_id = ? AND user_id = ?")
+    .get(dealId, userId);
+  if (existing) return;
+  db.prepare("INSERT INTO deal_claims (deal_id, user_id) VALUES (?, ?)").run(dealId, userId);
+}
+
+export function hasClaimedDeal(dealId: number, userId: number): boolean {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT id FROM deal_claims WHERE deal_id = ? AND user_id = ?")
+    .get(dealId, userId);
+  return Boolean(row);
+}
+
+export type DealClaimWithUser = {
+  user_id: number;
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+  claimed_at: string;
+};
+
+// Who claimed a deal — lets a business owner honor it in person (a
+// claim is a real record, not a reusable screenshot).
+export function listDealClaims(dealId: number, limit = 200): DealClaimWithUser[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT u.id AS user_id, u.username, u.first_name, u.last_name, dc.claimed_at
+       FROM deal_claims dc
+       JOIN users u ON u.id = dc.user_id
+       WHERE dc.deal_id = ?
+       ORDER BY dc.claimed_at ASC
+       LIMIT ?`
+    )
+    .all(dealId, limit) as DealClaimWithUser[];
 }

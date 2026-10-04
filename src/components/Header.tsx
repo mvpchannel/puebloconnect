@@ -143,6 +143,7 @@ export default function Header() {
                 <li><Link href="/live" title="">Pueblo Live</Link></li>
                 <li><Link href="/businesses" title="">Business Channels</Link></li>
                 <li><Link href="/events" title="">Events</Link></li>
+                <li><Link href="/deals" title="">Pueblo Deals</Link></li>
                 <li><Link href="/groups" title="">Groups</Link></li>
                 <li><Link href="/explore-3d" title="">Explore the Pueblo in 3D</Link></li>
                 <li><Link href="/membership" title="">Business Membership</Link></li>
