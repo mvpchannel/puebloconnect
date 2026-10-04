@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { toEmbedSrc } from "@/lib/stream-embed";
 
 type StreamStatus = "scheduled" | "live" | "ended";
 
@@ -89,6 +90,21 @@ type SpotlightRequest = {
   createdAt: string;
 };
 
+type Sponsor = {
+  id: number;
+  businessId: number;
+  businessName: string;
+  businessSlug: string;
+  businessCategory: string;
+  businessLogoPath: string | null;
+};
+
+type Clip = { id: number; label: string; timestampSeconds: number };
+
+type DirectoryBusiness = { id: number; name: string; category: string };
+
+type UpcomingStream = { id: number; title: string; hostName: string; scheduledFor: string | null };
+
 type WatchProgress = {
   elapsedSeconds: number;
   thresholdSeconds: number;
@@ -112,6 +128,12 @@ type StreamWatchClientProps = {
   initialActiveFlashDrop: ActiveFlashDrop;
   hostDeals: HostDeal[];
   initialQaQuestions: QaQuestion[];
+  initialSponsors: Sponsor[];
+  initialClips: Clip[];
+  allBusinesses: DirectoryBusiness[];
+  upcomingStreams: UpcomingStream[];
+  platform: "youtube" | "facebook" | "vimeo";
+  rawEmbedUrl: string;
 };
 
 const HEARTBEAT_INTERVAL_MS = 30_000;
@@ -148,6 +170,12 @@ export default function StreamWatchClient({
   initialActiveFlashDrop,
   hostDeals,
   initialQaQuestions,
+  initialSponsors,
+  initialClips,
+  allBusinesses,
+  upcomingStreams,
+  platform,
+  rawEmbedUrl,
 }: StreamWatchClientProps) {
   const router = useRouter();
   const canModerate = isHost || isAdmin;
@@ -178,6 +206,15 @@ export default function StreamWatchClient({
   const [spotlightRequested, setSpotlightRequested] = useState(false);
   const [spotlightRequests, setSpotlightRequests] = useState<SpotlightRequest[]>([]);
   const [showSpotlightQueue, setShowSpotlightQueue] = useState(false);
+
+  const [sponsors, setSponsors] = useState<Sponsor[]>(initialSponsors);
+  const [sponsorPickBusinessId, setSponsorPickBusinessId] = useState("");
+
+  const [clips, setClips] = useState<Clip[]>(initialClips);
+  const [clipLabel, setClipLabel] = useState("");
+  const [clipTimestamp, setClipTimestamp] = useState("");
+  const [playbackSrc, setPlaybackSrc] = useState(embedSrc);
+  const [activeClipId, setActiveClipId] = useState<number | null>(null);
 
   const [showHostTools, setShowHostTools] = useState(false);
   const [announcementDraft, setAnnouncementDraft] = useState("");
@@ -477,6 +514,76 @@ export default function StreamWatchClient({
       body: JSON.stringify({ status: status2 }),
     }).catch(() => {});
     setSpotlightRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: status2 } : r)));
+  }
+
+  function playClip(clip: Clip) {
+    setActiveClipId(clip.id);
+    setPlaybackSrc(toEmbedSrc(platform, rawEmbedUrl, clip.timestampSeconds));
+  }
+
+  async function addSponsor(e: FormEvent) {
+    e.preventDefault();
+    if (!sponsorPickBusinessId) return;
+    setHostBusy(true);
+    setHostError(null);
+    try {
+      const res = await fetch(`/api/streams/${streamId}/sponsors`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId: Number(sponsorPickBusinessId) }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setHostError(data.error || "Couldn't add that sponsor.");
+        return;
+      }
+      setSponsors((prev) => (prev.some((s) => s.id === data.sponsor.id) ? prev : [...prev, data.sponsor]));
+      setSponsorPickBusinessId("");
+    } finally {
+      setHostBusy(false);
+    }
+  }
+
+  async function removeSponsor(sponsorId: number) {
+    await fetch(`/api/streams/${streamId}/sponsors/${sponsorId}`, { method: "DELETE" }).catch(() => {});
+    setSponsors((prev) => prev.filter((s) => s.id !== sponsorId));
+  }
+
+  async function addClip(e: FormEvent) {
+    e.preventDefault();
+    const seconds = Number(clipTimestamp);
+    if (!clipLabel.trim() || !Number.isInteger(seconds) || seconds < 0) {
+      setHostError("A clip needs a label and a timestamp in seconds (0 or more).");
+      return;
+    }
+    setHostBusy(true);
+    setHostError(null);
+    try {
+      const res = await fetch(`/api/streams/${streamId}/clips`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ label: clipLabel.trim(), timestampSeconds: seconds }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setHostError(data.error || "Couldn't mark that clip.");
+        return;
+      }
+      setClips((prev) => [...prev, data.clip].sort((a, b) => a.timestampSeconds - b.timestampSeconds));
+      setClipLabel("");
+      setClipTimestamp("");
+    } finally {
+      setHostBusy(false);
+    }
+  }
+
+  async function removeClip(clipId: number) {
+    await fetch(`/api/streams/${streamId}/clips/${clipId}`, { method: "DELETE" }).catch(() => {});
+    setClips((prev) => prev.filter((c) => c.id !== clipId));
+    if (activeClipId === clipId) {
+      setActiveClipId(null);
+      setPlaybackSrc(embedSrc);
+    }
   }
 
   async function toggleLike() {
@@ -805,7 +912,7 @@ export default function StreamWatchClient({
       <div className="central-meta item" style={{ overflow: "hidden" }}>
         <div style={{ position: "relative", paddingBottom: "56.25%", background: "#000" }}>
           <iframe
-            src={embedSrc}
+            src={playbackSrc}
             title="Live stream"
             allow="autoplay; encrypted-media; picture-in-picture"
             allowFullScreen
@@ -1039,6 +1146,171 @@ export default function StreamWatchClient({
           <p role="alert" style={{ color: "#c0392b", padding: "0 20px 12px" }}>{error}</p>
         )}
       </div>
+
+      {(sponsors.length > 0 || canModerate) && (
+        <div className="central-meta item">
+          <div style={{ padding: "14px 20px" }}>
+            <h5 style={{ margin: "0 0 10px", color: "#888", fontSize: 13, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Featured Local Sponsors
+            </h5>
+            {sponsors.length === 0 && <p style={{ color: "#aaa", fontSize: 13 }}>No sponsors tagged yet.</p>}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              {sponsors.map((s) => (
+                <div
+                  key={s.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    border: "1px solid #eee",
+                    borderRadius: 20,
+                    padding: "6px 12px 6px 6px",
+                  }}
+                >
+                  {s.businessLogoPath ? (
+                    <img
+                      src={s.businessLogoPath}
+                      alt=""
+                      style={{ width: 26, height: 26, borderRadius: "50%", objectFit: "cover" }}
+                    />
+                  ) : (
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 26,
+                        height: 26,
+                        borderRadius: "50%",
+                        background: avatarColor(s.businessId),
+                        color: "#fff",
+                        fontSize: 12,
+                        fontWeight: 700,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      {s.businessName.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                  <a href={`/businesses/${s.businessSlug}`} style={{ fontSize: 13, fontWeight: 600 }}>
+                    {s.businessName}
+                  </a>
+                  <span style={{ fontSize: 11, color: "#999" }}>{s.businessCategory}</span>
+                  {canModerate && (
+                    <button
+                      type="button"
+                      onClick={() => removeSponsor(s.id)}
+                      style={{ background: "none", border: "none", color: "#bbb", cursor: "pointer", marginLeft: 2 }}
+                      title="Remove sponsor"
+                    >
+                      ×
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {canModerate && (
+              <form onSubmit={addSponsor} style={{ display: "flex", gap: 8, marginTop: 10 }}>
+                <select
+                  value={sponsorPickBusinessId}
+                  onChange={(e) => setSponsorPickBusinessId(e.target.value)}
+                  className="form-control"
+                  style={{ maxWidth: 260 }}
+                >
+                  <option value="">Add a sponsor…</option>
+                  {allBusinesses.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name} ({b.category})
+                    </option>
+                  ))}
+                </select>
+                <button className="btn btn-primary btn-sm" type="submit" disabled={hostBusy || !sponsorPickBusinessId}>
+                  Add
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+
+      {(clips.length > 0 || canModerate) && status !== "scheduled" && (
+        <div className="central-meta item">
+          <div style={{ padding: "14px 20px" }}>
+            <h5 style={{ margin: "0 0 10px", color: "#888", fontSize: 13, textTransform: "uppercase", letterSpacing: 0.5 }}>
+              Replay &amp; Highlights
+            </h5>
+            {clips.length === 0 && <p style={{ color: "#aaa", fontSize: 13 }}>No highlight clips marked yet.</p>}
+            <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
+              {clips.map((c) => (
+                <div key={c.id} style={{ flexShrink: 0, textAlign: "center" }}>
+                  <button
+                    type="button"
+                    onClick={() => playClip(c)}
+                    disabled={platform === "facebook"}
+                    title={platform === "facebook" ? "Jumping isn't supported for Facebook videos" : "Jump to this moment"}
+                    style={{
+                      width: 110,
+                      height: 62,
+                      borderRadius: 6,
+                      border: activeClipId === c.id ? "2px solid #1877d1" : "1px solid #ddd",
+                      background: "linear-gradient(135deg, #2c2c2c, #000)",
+                      color: "#fff",
+                      cursor: platform === "facebook" ? "default" : "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 18,
+                    }}
+                  >
+                    <i className="fa fa-play" />
+                  </button>
+                  <div style={{ fontSize: 11.5, marginTop: 4, width: 110 }}>
+                    {c.label}
+                    <div style={{ color: "#999" }}>
+                      {String(Math.floor(c.timestampSeconds / 60)).padStart(2, "0")}:
+                      {String(c.timestampSeconds % 60).padStart(2, "0")}
+                    </div>
+                  </div>
+                  {canModerate && (
+                    <button
+                      type="button"
+                      onClick={() => removeClip(c.id)}
+                      style={{ background: "none", border: "none", color: "#bbb", fontSize: 11, cursor: "pointer" }}
+                    >
+                      remove
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {canModerate && (
+              <form onSubmit={addClip} style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+                <input
+                  type="text"
+                  placeholder="Label, e.g. Big announcement"
+                  maxLength={150}
+                  value={clipLabel}
+                  onChange={(e) => setClipLabel(e.target.value)}
+                  className="form-control"
+                  style={{ maxWidth: 220 }}
+                />
+                <input
+                  type="number"
+                  placeholder="Timestamp (seconds)"
+                  min={0}
+                  value={clipTimestamp}
+                  onChange={(e) => setClipTimestamp(e.target.value)}
+                  className="form-control"
+                  style={{ maxWidth: 160 }}
+                />
+                <button className="btn btn-primary btn-sm" type="submit" disabled={hostBusy}>
+                  Mark clip
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
 
       {status === "live" && activeDrop && (
         <div className="central-meta item" style={{ background: "#fff8e6" }}>
@@ -1612,6 +1884,35 @@ export default function StreamWatchClient({
           </form>
         </div>
       </div>
+
+      {upcomingStreams.length > 0 && (
+        <div className="central-meta item">
+          <div style={{ padding: 20 }}>
+            <h4 style={{ marginBottom: 12 }}>Upcoming Live Streams</h4>
+            {upcomingStreams.map((u) => (
+              <a
+                key={u.id}
+                href={`/live/${u.id}`}
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  padding: "8px 0",
+                  borderBottom: "1px solid #f0f0f0",
+                  color: "inherit",
+                }}
+              >
+                <span>
+                  <strong>{u.title}</strong>
+                  <span style={{ color: "#999", marginLeft: 8, fontSize: 13 }}>{u.hostName}</span>
+                </span>
+                {u.scheduledFor && (
+                  <span style={{ color: "#999", fontSize: 13 }}>{new Date(u.scheduledFor).toLocaleString()}</span>
+                )}
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

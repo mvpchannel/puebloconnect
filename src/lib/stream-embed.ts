@@ -8,25 +8,39 @@
 // is returned as-is so an unusual-but-valid link (already an /embed/
 // URL, say) still works rather than being mangled.
 
-export function toEmbedSrc(platform: "youtube" | "facebook" | "vimeo", url: string): string {
+// startSeconds is for jumping a VOD replay to a highlight-clip
+// timestamp — honestly supported only where the platform's embed URL
+// has a real seek parameter (YouTube's `start`, Vimeo's `#t=`).
+// Facebook's plugin embed has no reliable unauthenticated seek param,
+// so a Facebook clip is a label only — never a fake jump.
+export function toEmbedSrc(
+  platform: "youtube" | "facebook" | "vimeo",
+  url: string,
+  startSeconds?: number
+): string {
   try {
     const parsed = new URL(url);
 
     if (platform === "youtube") {
-      if (parsed.pathname.startsWith("/embed/")) return url;
+      const withStart = (base: string) =>
+        startSeconds && startSeconds > 0
+          ? `${base}${base.includes("?") ? "&" : "?"}start=${Math.floor(startSeconds)}`
+          : base;
+
+      if (parsed.pathname.startsWith("/embed/")) return withStart(url);
       if (parsed.hostname.includes("youtu.be")) {
         const id = parsed.pathname.slice(1);
-        if (id) return `https://www.youtube.com/embed/${id}`;
+        if (id) return withStart(`https://www.youtube.com/embed/${id}`);
       }
       const v = parsed.searchParams.get("v");
-      if (v) return `https://www.youtube.com/embed/${v}`;
+      if (v) return withStart(`https://www.youtube.com/embed/${v}`);
       // A channel/live URL with no video id yet (stream not started) —
       // YouTube's "embed a channel's current live broadcast" URL shape.
       const channelMatch = parsed.pathname.match(/^\/channel\/([^/]+)/);
       if (channelMatch) {
         return `https://www.youtube.com/embed/live_stream?channel=${channelMatch[1]}`;
       }
-      return url;
+      return withStart(url);
     }
 
     if (platform === "facebook") {
@@ -37,10 +51,12 @@ export function toEmbedSrc(platform: "youtube" | "facebook" | "vimeo", url: stri
     }
 
     if (platform === "vimeo") {
-      if (parsed.hostname.includes("player.vimeo.com")) return url;
+      const withStart = (base: string) =>
+        startSeconds && startSeconds > 0 ? `${base}#t=${Math.floor(startSeconds)}s` : base;
+      if (parsed.hostname.includes("player.vimeo.com")) return withStart(url);
       const match = parsed.pathname.match(/\/(\d+)/);
-      if (match) return `https://player.vimeo.com/video/${match[1]}`;
-      return url;
+      if (match) return withStart(`https://player.vimeo.com/video/${match[1]}`);
+      return withStart(url);
     }
 
     return url;

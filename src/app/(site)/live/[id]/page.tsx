@@ -22,6 +22,9 @@ import {
   listAllDealsForBusiness,
   listStreams,
   listQaQuestions,
+  listStreamSponsors,
+  listStreamClips,
+  listBusinesses,
 } from "@/lib/db";
 import { toEmbedSrc } from "@/lib/stream-embed";
 
@@ -102,6 +105,38 @@ export default async function StreamDetailPage({
     votedByViewer: Boolean(q.voted_by_viewer),
   }));
 
+  const sponsors = listStreamSponsors(stream.id).map((s) => ({
+    id: s.id,
+    businessId: s.business_id,
+    businessName: s.business_name,
+    businessSlug: s.business_slug,
+    businessCategory: s.business_category,
+    businessLogoPath: s.business_logo_path,
+  }));
+
+  const clips = listStreamClips(stream.id).map((c) => ({
+    id: c.id,
+    label: c.label,
+    timestampSeconds: c.timestamp_seconds,
+  }));
+
+  // For the host's "add a sponsor" picker — the whole directory, same
+  // list the /businesses page itself browses.
+  const allBusinesses =
+    isHost || isAdmin ? listBusinesses().map((b) => ({ id: b.id, name: b.name, category: b.category })) : [];
+
+  // Upcoming schedule widget — other scheduled streams, soonest first
+  // (listStreams("scheduled", ...) already orders that way).
+  const upcomingStreams = listStreams("scheduled", session?.sub ?? null)
+    .filter((s) => s.id !== stream.id)
+    .slice(0, 5)
+    .map((s) => ({
+      id: s.id,
+      title: s.title,
+      hostName: [s.host_first_name, s.host_last_name].filter(Boolean).join(" ") || s.host_username,
+      scheduledFor: s.scheduled_for,
+    }));
+
   // Deals the host could attach to a milestone or a deal-type flash
   // drop — every active deal across every business they own.
   const hostDeals =
@@ -159,6 +194,12 @@ export default async function StreamDetailPage({
                   initialActiveFlashDrop={activeFlashDropShaped}
                   hostDeals={hostDeals}
                   initialQaQuestions={qaQuestions}
+                  initialSponsors={sponsors}
+                  initialClips={clips}
+                  allBusinesses={allBusinesses}
+                  upcomingStreams={upcomingStreams}
+                  platform={stream.platform}
+                  rawEmbedUrl={stream.embed_url}
                 />
               </div>
             </div>

@@ -975,6 +975,38 @@ function getDb(): DatabaseSync {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_spotlight_requests_stream ON stream_spotlight_requests(stream_id, status)`);
 
+    // Featured local sponsors — a host (or admin) tags an existing
+    // Business as a sponsor/partner of this stream, shown as a real
+    // business card (not a fake uploaded sponsor logo).
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_sponsors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stream_id INTEGER NOT NULL REFERENCES streams(id),
+        business_id INTEGER NOT NULL REFERENCES businesses(id),
+        created_by INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (stream_id, business_id)
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_sponsors_stream ON stream_sponsors(stream_id)`);
+
+    // Highlight clips — a labeled timestamp into the stream's own VOD,
+    // for the replay carousel. No clip is actually cut or re-hosted;
+    // it's a deep link into the host's own YouTube/Vimeo replay (see
+    // toEmbedSrc's startSeconds) — honest about what this app can and
+    // can't do with someone else's video.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_clips (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stream_id INTEGER NOT NULL REFERENCES streams(id),
+        label TEXT NOT NULL,
+        timestamp_seconds INTEGER NOT NULL,
+        created_by INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_clips_stream ON stream_clips(stream_id)`);
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -4866,6 +4898,92 @@ export function resolveSpotlightRequest(requestId: number, status: "spotlighted"
       `UPDATE stream_spotlight_requests SET status = ?, resolved_at = datetime('now') WHERE id = ? AND status = 'pending'`
     )
     .run(status, requestId);
+  return info.changes > 0;
+}
+
+// ---- Featured sponsors -------------------------------------------------
+
+export type StreamSponsor = {
+  id: number;
+  stream_id: number;
+  business_id: number;
+  business_name: string;
+  business_slug: string;
+  business_category: string;
+  business_logo_path: string | null;
+  created_at: string;
+};
+
+const STREAM_SPONSOR_SELECT = `
+  SELECT
+    sp.id, sp.stream_id, sp.business_id, sp.created_at,
+    b.name AS business_name, b.slug AS business_slug,
+    b.category AS business_category, b.logo_path AS business_logo_path
+  FROM stream_sponsors sp
+  JOIN businesses b ON b.id = sp.business_id
+`;
+
+export function addStreamSponsor(streamId: number, businessId: number, createdBy: number): StreamSponsor {
+  const db = getDb();
+  const existing = db
+    .prepare(`SELECT id FROM stream_sponsors WHERE stream_id = ? AND business_id = ?`)
+    .get(streamId, businessId);
+  if (existing) {
+    return db.prepare(`${STREAM_SPONSOR_SELECT} WHERE sp.id = ?`).get((existing as { id: number }).id) as StreamSponsor;
+  }
+  const info = db
+    .prepare(`INSERT INTO stream_sponsors (stream_id, business_id, created_by) VALUES (?, ?, ?)`)
+    .run(streamId, businessId, createdBy);
+  return db
+    .prepare(`${STREAM_SPONSOR_SELECT} WHERE sp.id = ?`)
+    .get(Number(info.lastInsertRowid)) as StreamSponsor;
+}
+
+export function removeStreamSponsor(streamId: number, sponsorId: number): boolean {
+  const db = getDb();
+  const info = db
+    .prepare(`DELETE FROM stream_sponsors WHERE id = ? AND stream_id = ?`)
+    .run(sponsorId, streamId);
+  return info.changes > 0;
+}
+
+export function listStreamSponsors(streamId: number): StreamSponsor[] {
+  const db = getDb();
+  return db
+    .prepare(`${STREAM_SPONSOR_SELECT} WHERE sp.stream_id = ? ORDER BY sp.id ASC`)
+    .all(streamId) as StreamSponsor[];
+}
+
+// ---- Highlight clips (replay carousel) -------------------------------------
+
+export type StreamClip = {
+  id: number;
+  stream_id: number;
+  label: string;
+  timestamp_seconds: number;
+  created_at: string;
+};
+
+export function createStreamClip(streamId: number, createdBy: number, label: string, timestampSeconds: number): StreamClip {
+  const db = getDb();
+  const info = db
+    .prepare(`INSERT INTO stream_clips (stream_id, label, timestamp_seconds, created_by) VALUES (?, ?, ?, ?)`)
+    .run(streamId, label, timestampSeconds, createdBy);
+  return db
+    .prepare(`SELECT id, stream_id, label, timestamp_seconds, created_at FROM stream_clips WHERE id = ?`)
+    .get(Number(info.lastInsertRowid)) as StreamClip;
+}
+
+export function listStreamClips(streamId: number): StreamClip[] {
+  const db = getDb();
+  return db
+    .prepare(`SELECT id, stream_id, label, timestamp_seconds, created_at FROM stream_clips WHERE stream_id = ? ORDER BY timestamp_seconds ASC`)
+    .all(streamId) as StreamClip[];
+}
+
+export function deleteStreamClip(streamId: number, clipId: number): boolean {
+  const db = getDb();
+  const info = db.prepare(`DELETE FROM stream_clips WHERE id = ? AND stream_id = ?`).run(clipId, streamId);
   return info.changes > 0;
 }
 
