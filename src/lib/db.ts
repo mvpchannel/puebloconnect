@@ -1817,8 +1817,16 @@ export type FeedPost = PostWithAuthor & {
   posted_in_href: string | null;
 };
 
-export function listFeedPosts(viewerId: number | null, limit = 30): FeedPost[] {
+export function listFeedPosts(
+  viewerId: number | null,
+  limit = 30,
+  // Keyset cursor: only posts older than this (created_at, id) pair, so
+  // "load more" never skips or repeats posts even when new ones arrive.
+  before: { createdAt: string; id: number } | null = null
+): FeedPost[] {
   const db = getDb();
+  const beforeClause = before ? "AND (p.created_at < ? OR (p.created_at = ? AND p.id < ?))" : "";
+  const beforeParams = before ? [before.createdAt, before.createdAt, before.id] : [];
   return db
     .prepare(
       `SELECT
@@ -1837,11 +1845,11 @@ export function listFeedPosts(viewerId: number | null, limit = 30): FeedPost[] {
        LEFT JOIN groups g ON p.target_type = 'group' AND g.id = p.target_id
        LEFT JOIN businesses b ON p.target_type = 'business' AND b.id = p.target_id
        LEFT JOIN events e ON p.target_type = 'event' AND e.id = p.target_id
-       WHERE p.deleted_at IS NULL
+       WHERE p.deleted_at IS NULL ${beforeClause}
        ORDER BY p.created_at DESC, p.id DESC
        LIMIT ?`
     )
-    .all(viewerId ?? 0, limit) as FeedPost[];
+    .all(viewerId ?? 0, ...beforeParams, limit) as FeedPost[];
 }
 
 // Used by the profile/timeline page — a member's own posts across every

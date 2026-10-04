@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import Sidebar from "@/components/Sidebar";
 import PostComposer from "@/components/PostComposer";
 import PostCard from "@/components/PostCard";
+import LoadMoreFeed from "@/components/LoadMoreFeed";
 import DealClaimButton from "@/components/DealClaimButton";
 import { getCurrentUser } from "@/lib/require-user";
 import { viewerAvatarSrc } from "@/lib/viewer";
@@ -24,7 +25,12 @@ export const metadata: Metadata = {
 export default async function NewsfeedPage() {
   const session = await getCurrentUser();
   const viewerAvatar = viewerAvatarSrc(session?.sub ?? null);
-  const posts = listFeedPosts(session?.sub ?? null);
+  const PAGE_SIZE = 30;
+  const rows = listFeedPosts(session?.sub ?? null, PAGE_SIZE + 1);
+  const posts = rows.slice(0, PAGE_SIZE);
+  const lastPost = posts[posts.length - 1];
+  const nextCursor =
+    rows.length > PAGE_SIZE && lastPost ? `${lastPost.created_at}|${lastPost.id}` : null;
   const dealOfTheDay = getFeaturedDeal();
 
   return (
@@ -102,6 +108,13 @@ export default async function NewsfeedPage() {
                       isLoggedIn={Boolean(session)}
                     />
                   ))}
+                  <LoadMoreFeed
+                    initialCursor={nextCursor}
+                    isLoggedIn={Boolean(session)}
+                    currentUserId={session?.sub ?? null}
+                    isAdmin={session?.role === "admin"}
+                    viewerAvatar={viewerAvatar}
+                  />
                 </div>
               </div>
             </div>
