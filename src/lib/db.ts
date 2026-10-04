@@ -60,11 +60,12 @@ function getDb(): DatabaseSync {
     db.exec(`
       CREATE TABLE IF NOT EXISTS payment_transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        paypal_order_id TEXT NOT NULL UNIQUE,
+        stripe_session_id TEXT NOT NULL UNIQUE,
+        stripe_payment_intent_id TEXT,
         user_id INTEGER NOT NULL REFERENCES users(id),
         plan TEXT NOT NULL CHECK (plan IN ('basic', 'plus', 'premier')),
         amount_cents INTEGER NOT NULL,
-        currency TEXT NOT NULL DEFAULT 'USD',
+        currency TEXT NOT NULL DEFAULT 'usd',
         status TEXT NOT NULL DEFAULT 'created' CHECK (status IN ('created', 'completed', 'failed')),
         created_at TEXT NOT NULL DEFAULT (datetime('now')),
         completed_at TEXT
@@ -150,14 +151,15 @@ export function deleteUser(id: number): void {
 }
 
 // ---------------------------------------------------------------------
-// Business memberships + PayPal payment transactions
+// Business memberships + Stripe payment transactions
 // ---------------------------------------------------------------------
 
 export type PlanId = "basic" | "plus" | "premier";
 
 export type PaymentTransaction = {
   id: number;
-  paypal_order_id: string;
+  stripe_session_id: string;
+  stripe_payment_intent_id: string | null;
   user_id: number;
   plan: PlanId;
   amount_cents: number;
@@ -177,48 +179,52 @@ export type BusinessMembership = {
   updated_at: string;
 };
 
-// Called right after a PayPal order is created (status CREATED), before
-// the buyer has approved or paid anything — so we have a record even if
-// they abandon checkout. Updated to 'completed' only after a real,
-// verified capture (see markTransactionCompleted).
-export function recordOrderCreated(
-  paypalOrderId: string,
+// Called right after a Stripe Checkout Session is created (status
+// CREATED), before the buyer has paid anything — so we have a record even
+// if they abandon checkout. Updated to 'completed' only after the payment
+// is verified, either by the webhook or the success-page reconciliation
+// check (see markTransactionCompleted).
+export function recordCheckoutSessionCreated(
+  stripeSessionId: string,
   userId: number,
   plan: PlanId,
   amountCents: number,
-  currency = "USD"
+  currency = "usd"
 ): void {
   const db = getDb();
   db.prepare(
     `INSERT INTO payment_transactions
-       (paypal_order_id, user_id, plan, amount_cents, currency, status)
+       (stripe_session_id, user_id, plan, amount_cents, currency, status)
      VALUES (?, ?, ?, ?, ?, 'created')`
-  ).run(paypalOrderId, userId, plan, amountCents, currency);
+  ).run(stripeSessionId, userId, plan, amountCents, currency);
 }
 
-export function getTransactionByOrderId(
-  paypalOrderId: string
+export function getTransactionBySessionId(
+  stripeSessionId: string
 ): PaymentTransaction | undefined {
   const db = getDb();
   return db
-    .prepare("SELECT * FROM payment_transactions WHERE paypal_order_id = ?")
-    .get(paypalOrderId) as PaymentTransaction | undefined;
+    .prepare("SELECT * FROM payment_transactions WHERE stripe_session_id = ?")
+    .get(stripeSessionId) as PaymentTransaction | undefined;
 }
 
-export function markTransactionCompleted(paypalOrderId: string): void {
+export function markTransactionCompleted(
+  stripeSessionId: string,
+  stripePaymentIntentId: string | null
+): void {
   const db = getDb();
   db.prepare(
     `UPDATE payment_transactions
-     SET status = 'completed', completed_at = datetime('now')
-     WHERE paypal_order_id = ?`
-  ).run(paypalOrderId);
+     SET status = 'completed', completed_at = datetime('now'), stripe_payment_intent_id = ?
+     WHERE stripe_session_id = ?`
+  ).run(stripePaymentIntentId, stripeSessionId);
 }
 
-export function markTransactionFailed(paypalOrderId: string): void {
+export function markTransactionFailed(stripeSessionId: string): void {
   const db = getDb();
   db.prepare(
-    "UPDATE payment_transactions SET status = 'failed' WHERE paypal_order_id = ?"
-  ).run(paypalOrderId);
+    "UPDATE payment_transactions SET status = 'failed' WHERE stripe_session_id = ?"
+  ).run(stripeSessionId);
 }
 
 export function listTransactionsForUser(userId: number): PaymentTransaction[] {
@@ -238,10 +244,11 @@ export function listAllTransactions(): PaymentTransaction[] {
 }
 
 // Activates (or renews) a membership for one billing period (30 days from
-// now) after a verified, completed PayPal capture. This is a one-time
-// Orders-API payment representing "one month," not an auto-renewing
+// now) after a verified, completed Stripe Checkout payment. This is a
+// one-time payment representing "one month," not an auto-renewing
 // subscription — see README for why, and what real auto-renewal would
-// need (PayPal Subscriptions API) instead.
+// need (Stripe Billing/Subscriptions, i.e. mode: "subscription" Checkout
+// Sessions + a recurring Price) instead.
 export function activateMembership(userId: number, plan: PlanId): BusinessMembership {
   const db = getDb();
   const now = new Date();

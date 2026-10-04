@@ -2,7 +2,7 @@
 // amount for a membership plan is allowed to live. The client sends a
 // plan ID ("basic" | "plus" | "premier") and NEVER an amount — every
 // server route that charges money looks the price up here, ignoring
-// anything the browser might have sent. See src/app/api/paypal/orders/route.ts.
+// anything the browser might have sent. See src/app/api/stripe/checkout/route.ts.
 
 import type { PlanId } from "@/lib/db";
 

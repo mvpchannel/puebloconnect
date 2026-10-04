@@ -11,15 +11,17 @@ blocked (both the public npm registry and an internal mirror returned
 403/401 on every request — not a one-off, a standing restriction). That
 means:
 
-- Every `.ts`/`.tsx` file **was** syntax-checked with esbuild (confirms
-  valid TypeScript/JSX, no unclosed tags or structural mistakes) — 58/58
-  files passed.
+- Every `.ts`/`.tsx` file **was** syntax-checked (confirms valid
+  TypeScript/JSX, no unclosed tags or structural mistakes) — 59/59 files
+  passed.
 - It has **not** been through an actual `next build`, so TypeScript type
   errors against the real `next`/`react` type definitions, any remaining
   import mistakes, or runtime issues can't be ruled out yet.
-- **Exception: the auth/session/database logic was actually run**, not just
-  syntax-checked — see "Auth system" below. It needs no `npm install` because
-  it's built entirely on Node's own built-ins.
+- **Exception: the auth/session/database logic and the Stripe payment
+  logic were actually run**, not just syntax-checked — see "Auth system"
+  and "Business membership payments" below. Both need no `npm install`
+  because they're built entirely on Node's own built-ins plus plain
+  `fetch` calls to Stripe's REST API (no `stripe` npm package).
 
 **First thing to do on a machine with working npm access:**
 
@@ -139,7 +141,7 @@ see the comments in `src/app/layout.tsx` for why.
 | `/newsfeed` | `newsfeed.html` | Requires login (middleware-protected). Composer + feed with sample posts. Like button is real local state (not persisted). Comments post locally only. |
 | `/profile` | `time-line.html` | Requires login. Cover photo/avatar/tabs header, reuses the newsfeed composer/post components. |
 | `/admin/*` (16 routes) | `winku admin/*.html` | Requires login **and** `role: admin`. All 16 pages ported — 2 real (dashboard, user management), 14 visual-only. See "Admin panel" above. |
-| `/membership` | — (new) | Requires login. Real PayPal checkout for the 3 business plans. See "Business membership payments" above. |
+| `/membership` | — (new) | Requires login. Real Stripe Checkout for the 3 business plans. See "Business membership payments" above. |
 | `/membership/success`, `/cancel`, `/error` | — (new) | Requires login. Real result screens the checkout redirects to. |
 | `/advertise` | — (new) | Public, no login required. Full digital-advertising rate card from the marketing package, plus the 3 membership plans linking to `/membership`. |
 | `/terms` | `terms.html` (Phase 0) | Same placeholder draft content — still needs a lawyer's review before launch. |
@@ -203,66 +205,102 @@ its path to `MEMBER_ROUTES`/`ADMIN_ROUTES`.
    add a row to the table above.
 7. Run `npm run build` and fix whatever it flags.
 
-## Business membership payments (PayPal, real)
+## Business membership payments (Stripe, real)
 
 `/membership` (3 plans) and `/advertise` (full rate card) are new,
-public-facing pages with a genuinely working PayPal checkout behind the
+public-facing pages with a genuinely working Stripe checkout behind the
 three recurring plans — Basic $49/mo, Plus $99/mo, Premier $199/mo.
+
+This talks to Stripe's REST API directly over `fetch` — deliberately
+**without** the `stripe` npm package, because this sandbox can't run
+`npm install` (see "Not yet build-verified" at the top of this README).
+Stripe's
+API is plain HTTP, so this is a real, supported integration style, not a
+shortcut: `src/lib/stripe.ts` builds the form-encoded requests and verifies
+webhook signatures by hand (documented, stable HMAC-SHA256 scheme — no SDK
+needed for that either). Swapping in the real `stripe` package later, if
+you ever get a working `npm install`, is a drop-in replacement for that one
+file; nothing else would need to change.
 
 **How it works:**
 
-1. The browser loads the PayPal JS SDK v6 from
-   `https://www.sandbox.paypal.com/web-sdk/v6/core` (or the `www.paypal.com`
-   domain in production) — which domain to load is decided by
-   `PAYPAL_ENV`, fetched from `GET /api/paypal/config`
-   (`src/components/membership/MembershipPlans.tsx`).
-2. Clicking "Pay with PayPal" on a plan calls `POST /api/paypal/orders`
-   with only a plan ID (`"basic"`/`"plus"`/`"premier"`) — **never an
-   amount**. The server looks up the real price in `src/lib/plans.ts`
-   (the one and only place a dollar figure for a plan is allowed to live)
-   and creates the PayPal order itself via the Orders v2 API
-   (`src/lib/paypal.ts`). A tampered client that sent a different amount
+1. Clicking "Subscribe" on a plan calls `POST /api/stripe/checkout` with
+   only a plan ID (`"basic"`/`"plus"`/`"premier"`) — **never an amount**.
+   The server looks up the real price in `src/lib/plans.ts` (the one and
+   only place a dollar figure for a plan is allowed to live) and creates a
+   **Stripe Checkout Session** for that exact amount
+   (`src/lib/stripe.ts`). A tampered client that sent a different amount
    would simply have it ignored.
-3. After the buyer approves in PayPal's UI, the SDK calls
-   `POST /api/paypal/orders/:id/capture`. That route re-verifies
-   everything before activating anything: the order must belong to the
-   logged-in user making the request, PayPal's own capture response must
-   say `COMPLETED`, and the amount PayPal actually captured must match
-   what was recorded when the order was created. Only then does it call
-   `activateMembership()` in `src/lib/db.ts`.
-4. Every attempt is recorded in the `payment_transactions` table
-   (PayPal order ID, user id, plan, amount, status, timestamps) —
-   including ones that are abandoned or fail, not just successes.
-   `business_memberships` holds the current plan/status/period per user.
+2. The browser is redirected to Stripe's own hosted, PCI-compliant
+   payment page (`checkoutSession.url`) — no card data, and no payment UI
+   of any kind, ever touches this codebase.
+3. After paying, Stripe redirects back to `/membership/success?session_id=...`.
+   That page calls `GET /api/stripe/checkout/:id/confirm`, which re-fetches
+   the session from Stripe and runs it through the same verify-then-activate
+   logic described below — this is a convenience so the buyer sees "active"
+   immediately, not the source of truth (next point).
+4. **The authoritative path is the webhook**, `POST /api/stripe/webhook`
+   (`src/app/api/stripe/webhook/route.ts`). Stripe calls this directly,
+   with retries, independent of whether the buyer's browser ever makes it
+   back to the success page. The handler verifies the `Stripe-Signature`
+   header (rejecting anything not actually from Stripe, and anything
+   older than 5 minutes, as a replay guard), then runs the shared
+   fulfillment logic in `src/lib/stripe-fulfillment.ts`: the session must
+   belong to a transaction we recorded, Stripe's own `payment_status` must
+   say `"paid"`, and the amount Stripe actually collected must match what
+   was recorded when the Checkout Session was created. Only then does it
+   call `activateMembership()` in `src/lib/db.ts`. Both the webhook and the
+   success-page confirm route funnel through this one function, and it's
+   idempotent — whichever one runs first does the work; the second is a
+   no-op.
+5. Every attempt is recorded in the `payment_transactions` table (Stripe
+   Checkout Session ID, payment intent ID, user id, plan, amount, status,
+   timestamps) — including ones that are abandoned or fail, not just
+   successes. `business_memberships` holds the current plan/status/period
+   per user.
 
-**Sandbox → production, by environment variable only** (`.env.example`
-has the full list): set `PAYPAL_ENV=sandbox` with a Sandbox app's
-Client ID/Secret from the
-[PayPal Developer Dashboard](https://developer.paypal.com/dashboard/applications)
-to test the whole flow with fake PayPal sandbox accounts — no real money
-moves. Once that's tested end to end, switching to real payments is
-`PAYPAL_ENV=production` plus that same app's **live** Client ID/Secret —
-no code changes. The Client Secret is read only in `src/lib/paypal.ts`,
-server-side, and is never sent to the browser or written into any
-committed file; the Client ID *is* sent to the browser (by PayPal's own
-design — it identifies the app, it isn't a secret), but still only via
-env var through `/api/paypal/config`, never hardcoded in source.
+**Test mode → live mode, by environment variable only** (`.env.example`
+has the full list): Stripe doesn't use a separate sandbox URL the way some
+processors do — one API serves both, and which mode you're in is decided
+entirely by which key you set. Use a **test** Secret Key (`sk_test_...`)
+from the [Stripe Dashboard](https://dashboard.stripe.com/apikeys) (with
+"Test mode" on, top right) and pay with
+[Stripe's test cards](https://docs.stripe.com/testing) (e.g.
+`4242 4242 4242 4242`, any future expiry, any CVC) — no real money moves.
+Once that's tested end to end, switching to real payments is swapping in
+the **live** Secret Key and live Webhook Signing Secret — no code changes.
+`STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are read only in
+`src/lib/stripe.ts`, server-side, and are never sent to the browser or
+written into any committed file. An optional `STRIPE_ACCOUNT_ID` env var
+(the account ID the business owner provided, e.g. `acct_xxxxxxxxxxxx`) is
+checked against the key's real account before every checkout attempt as a
+guard against an accidentally-wrong key — see `verifyConfiguredAccount()`.
+
+**Testing the webhook locally:** Stripe needs a reachable HTTPS URL to
+deliver webhooks to, which a local/sandboxed dev server doesn't have on
+its own. The
+[Stripe CLI](https://docs.stripe.com/stripe-cli)'s `stripe listen --forward-to
+<your-dev-url>/api/stripe/webhook` solves this for local development by
+forwarding real test-mode events to your machine, and it prints a webhook
+signing secret to put in `STRIPE_WEBHOOK_SECRET`. In production, add the
+endpoint in the Stripe Dashboard under Developers → Webhooks instead. Until
+either is set up, the success-page confirm route (step 3 above) still
+activates memberships for buyers who complete checkout — only a refund,
+chargeback, or an abandoned-but-later-completed async payment would be
+missed without the webhook wired up.
 
 **What's real vs. not yet:**
 
-- Real: order creation, server-side price enforcement, payment capture
-  verification, membership activation, full transaction history, success/
-  cancel/error screens, responsive design matching the site.
-- **Not a subscription** — this is a one-time Orders-API payment that
-  represents one month. There's no automatic renewal; `current_period_end`
-  is informational today. True auto-billing would mean switching to
-  PayPal's **Subscriptions API** (recurring billing plans + webhooks for
-  renewal/failure events) — a separate, larger integration, not built here.
-- **No webhook handler yet.** A refund or chargeback issued from PayPal's
-  side (not through this app) won't automatically deactivate the
-  membership — that needs a `POST /api/paypal/webhook` endpoint verifying
-  PayPal's webhook signature and reacting to `PAYMENT.CAPTURE.REFUNDED` /
-  `.REVERSED` events. Noted as a real gap, not pretended away.
+- Real: Checkout Session creation, server-side price enforcement, webhook
+  signature verification, payment verification before activation,
+  membership activation, full transaction history, success/cancel/error
+  screens, responsive design matching the site.
+- **Not a subscription** — this is a one-time payment that represents one
+  month. There's no automatic renewal; `current_period_end` is
+  informational today. True auto-billing would mean switching to **Stripe
+  Billing** (a `mode: "subscription"` Checkout Session with a recurring
+  Price, plus handling `invoice.paid` / `invoice.payment_failed` webhook
+  events for renewal) — a separate, larger integration, not built here.
 - The rate-card items on `/advertise` other than the three membership
   plans (Sponsored Post, Deal of the Week, Homepage Banner, etc.) are
   informational only — each is a one-off/weekly price with its own

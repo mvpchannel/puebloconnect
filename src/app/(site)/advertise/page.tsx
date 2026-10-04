@@ -19,9 +19,10 @@ export const metadata: Metadata = {
 // per-week ad products in the table below (Sponsored Post, Deal of the
 // Week, Homepage Banner, etc.) don't have their own checkout flow yet;
 // reaching the advertising contact below is the real, working path to
-// buy one today. Building a PayPal flow for each of those individually
-// is real, separate work (each is its own price/duration/placement, not
-// a recurring plan) — noted in FUNCTIONALITY_STATUS.md.
+// buy one today. Building a Stripe Checkout flow for each of those
+// individually is real, separate work (each is its own
+// price/duration/placement, not a recurring plan) — noted in
+// FUNCTIONALITY_STATUS.md.
 export default function AdvertisePage() {
   return (
     <>
@@ -124,7 +125,7 @@ export default function AdvertisePage() {
           <p style={{ color: "#666", marginBottom: 20 }}>
             The heart of the program — recurring monthly revenue from a
             business presence that keeps working between newspaper editions.
-            Pay securely with PayPal and your membership activates
+            Pay securely with Stripe and your membership activates
             automatically once payment is verified.
           </p>
           <div className="plan-grid">
