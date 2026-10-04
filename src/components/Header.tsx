@@ -1,12 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatRelativeTime } from "@/lib/time";
 import { NOTIFICATION_TEXT, NOTIFICATION_LINK, type NotificationItem } from "@/lib/notification-text";
 
 type SessionUser = { id: number; username: string; email: string; role: "member" | "admin" };
+
+type SearchResult = { id: number; username: string; name: string; profilePhotoPath: string | null };
+
+type OpenMenu = "search" | "notifications" | "messages" | "user" | null;
 
 /**
  * Shared site header: mobile responsive-header + desktop topbar.
@@ -18,9 +22,18 @@ type SessionUser = { id: number; username: string; email: string; role: "member"
  * see MIGRATION_STATUS.md).
  *
  * STATUS: navigation links work (real routes). The notification bell and
- * message badge are real now — see /api/notifications and
- * countUnreadMessages in src/lib/db.ts. The search box is still a static
- * placeholder — no site-wide search exists yet.
+ * message badge are real — see /api/notifications and countUnreadMessages
+ * in src/lib/db.ts. The search box is real too now — see /api/users/search
+ * (previously reused only by the Friends "add someone" box).
+ *
+ * All four of these (search / notifications / messages / the avatar menu)
+ * are CSS-driven dropdowns from the original vendor theme (.active toggles
+ * visibility — see style.css) that only ever opened via a jQuery plugin
+ * (public/js/script.js) this Next rebuild never actually loads. Until this
+ * component started managing `openMenu` itself, every one of them was
+ * genuinely dead: clicking the bell, the messages icon, the search icon,
+ * or the avatar did nothing visible at all, no matter what real data was
+ * behind them.
  */
 export default function Header() {
   const router = useRouter();
@@ -29,6 +42,80 @@ export default function Header() {
   const [unreadMessageCount, setUnreadMessageCount] = useState(0);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
+
+  const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const settingAreaRef = useRef<HTMLUListElement>(null);
+  const userImgRef = useRef<HTMLDivElement>(null);
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [sentRequestIds, setSentRequestIds] = useState<number[]>([]);
+
+  // Click-away: close whichever dropdown is open when a click lands
+  // outside the search/notifications/messages/avatar cluster.
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      const target = e.target as Node;
+      const inSettingArea = settingAreaRef.current?.contains(target);
+      const inUserImg = userImgRef.current?.contains(target);
+      if (!inSettingArea && !inUserImg) {
+        setOpenMenu(null);
+      }
+    }
+    document.addEventListener("click", onDocClick);
+    return () => document.removeEventListener("click", onDocClick);
+  }, []);
+
+  // Debounced live search — same /api/users/search the Friends page's
+  // "add someone" box already uses (searchUsers in db.ts), so this
+  // doesn't invent a second search backend.
+  useEffect(() => {
+    const q = searchQuery.trim();
+    // /api/users/search requires login (it's "find a member," not a
+    // public directory) — skip the request entirely for a signed-out
+    // visitor instead of firing it and eating a 401.
+    if (q.length < 2 || !user) {
+      setSearchResults([]);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(() => {
+      fetch(`/api/users/search?q=${encodeURIComponent(q)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (!cancelled) setSearchResults(data.users || []);
+        })
+        .catch(() => {
+          if (!cancelled) setSearchResults([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSearching(false);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [searchQuery]);
+
+  function toggleMenu(menu: OpenMenu) {
+    setOpenMenu((current) => (current === menu ? null : menu));
+  }
+
+  async function sendFriendRequest(recipientId: number) {
+    try {
+      const res = await fetch("/api/friends/requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipientId }),
+      });
+      if (res.ok) setSentRequestIds((prev) => [...prev, recipientId]);
+    } catch {
+      /* best-effort — the Friends page is the full-featured fallback */
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +147,7 @@ export default function Header() {
   // bell dropdown — not on page load, so the badge count is still
   // meaningful if they never open it.
   async function handleBellOpen() {
+    toggleMenu("notifications");
     if (unreadNotificationCount === 0) return;
     setUnreadNotificationCount(0);
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
@@ -117,7 +205,12 @@ export default function Header() {
           </span>
         </div>
         <div className="mh-head second">
-          <form className="mh-form" role="search">
+          {/* STATUS: decorative on the mobile header specifically — the
+              real member search lives in the desktop topbar's search
+              icon (see .setting-area below). Wiring this one too means
+              designing its own result-dropdown layout for the narrow
+              responsive header, which hasn't been done. */}
+          <form className="mh-form" role="search" onSubmit={(e) => e.preventDefault()}>
             <input placeholder="search" />
             <a href="#/" className="fa fa-search" aria-label="Search" />
           </form>
@@ -201,17 +294,85 @@ export default function Header() {
               </ul>
             </li>
           </ul>
-          <ul className="setting-area">
+          <ul className="setting-area" ref={settingAreaRef}>
             <li>
-              <a href="#" title="Search" data-ripple="">
+              <a
+                href="#"
+                title="Search"
+                data-ripple=""
+                onClick={(e) => {
+                  e.preventDefault();
+                  toggleMenu("search");
+                }}
+              >
                 <i className="ti-search" />
               </a>
-              <div className="searched">
-                <form method="post" className="form-search">
-                  <input type="text" placeholder="Search Friend" />
+              <div className={`searched${openMenu === "search" ? " active" : ""}`}>
+                <form
+                  className="form-search"
+                  onSubmit={(e) => e.preventDefault()}
+                  style={{ position: "relative" }}
+                >
+                  <input
+                    type="text"
+                    placeholder="Search members"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    autoFocus={openMenu === "search"}
+                  />
                   <button type="submit" data-ripple="" aria-label="Submit search">
                     <i className="ti-search" />
                   </button>
+                  {openMenu === "search" && searchQuery.trim().length >= 2 && (
+                    <div
+                      className="dropdowns active"
+                      style={{ position: "absolute", left: 0, right: "auto", top: "calc(100% + 8px)", width: "100%" }}
+                    >
+                      {!user && (
+                        <span>
+                          <Link href="/login" title="">Log in</Link> to search members
+                        </span>
+                      )}
+                      {user && searching && <span>Searching…</span>}
+                      {user && !searching && searchResults.length === 0 && <span>No members found</span>}
+                      {user &&
+                        !searching &&
+                        searchResults.map((r) => (
+                          <div
+                            key={r.id}
+                            style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderBottom: "1px solid #e1e8ed" }}
+                          >
+                            <img
+                              src={r.profilePhotoPath || "/images/defaults/default-avatar-male.jpg"}
+                              alt=""
+                              style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
+                            />
+                            <Link
+                              href={`/messages?to=${r.id}`}
+                              title=""
+                              style={{ flex: 1, fontSize: 13, color: "#333" }}
+                              onClick={() => setOpenMenu(null)}
+                            >
+                              {r.name}
+                            </Link>
+                            {sentRequestIds.includes(r.id) ? (
+                              <span style={{ fontSize: 11, color: "#999" }}>Request sent</span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  sendFriendRequest(r.id);
+                                }}
+                                style={{ fontSize: 11, border: "none", background: "none", color: "#1f6feb", cursor: "pointer", padding: 0 }}
+                              >
+                                Add friend
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                    </div>
+                  )}
                 </form>
               </div>
             </li>
@@ -225,7 +386,7 @@ export default function Header() {
                 <i className="ti-bell" />
                 <span>{unreadNotificationCount}</span>
               </a>
-              <div className="dropdowns">
+              <div className={`dropdowns${openMenu === "notifications" ? " active" : ""}`}>
                 {notifications.length === 0 && <span>No new notifications</span>}
                 {notifications.map((n) => (
                   <Link
@@ -260,27 +421,40 @@ export default function Header() {
               </div>
             </li>
             <li>
-              <Link href="/messages" title="Messages" data-ripple="">
+              <a
+                href="#"
+                title="Messages"
+                data-ripple=""
+                onClick={(e) => {
+                  e.preventDefault();
+                  toggleMenu("messages");
+                }}
+              >
                 <i className="ti-comment" />
                 <span>{unreadMessageCount}</span>
-              </Link>
-              <div className="dropdowns">
+              </a>
+              <div className={`dropdowns${openMenu === "messages" ? " active" : ""}`}>
                 <span>{unreadMessageCount > 0 ? `${unreadMessageCount} unread message${unreadMessageCount === 1 ? "" : "s"}` : "No new messages"}</span>
-                <Link href="/messages" title="" className="more-mesg">
+                <Link href="/messages" title="" className="more-mesg" onClick={() => setOpenMenu(null)}>
                   view all
                 </Link>
               </div>
             </li>
           </ul>
-          <div className="user-img">
+          <div className="user-img" ref={userImgRef}>
             <img
               src={
                 user ? "/images/defaults/default-avatar-male.jpg" : "/images/resources/admin.jpg"
               }
               alt=""
+              style={{ cursor: "pointer" }}
+              onClick={(e) => {
+                e.preventDefault();
+                toggleMenu("user");
+              }}
             />
             <span className="status f-online" />
-            <div className="user-setting">
+            <div className={`user-setting${openMenu === "user" ? " active" : ""}`}>
               {user ? (
                 <>
                   <span style={{ display: "block", padding: "8px 15px", fontWeight: 600 }}>
