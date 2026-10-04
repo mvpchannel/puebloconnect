@@ -5,7 +5,7 @@ import Sidebar from "@/components/Sidebar";
 import PostComposer from "@/components/PostComposer";
 import PostCard from "@/components/PostCard";
 import { getCurrentUser } from "@/lib/require-user";
-import { getUserById, listPostsByAuthor } from "@/lib/db";
+import { getUserById, listPostsByAuthor, listFriends } from "@/lib/db";
 import { formatRelativeTime } from "@/lib/time";
 
 export const metadata: Metadata = {
@@ -21,6 +21,7 @@ export default async function ProfilePage() {
   const session = await getCurrentUser();
   const user = session ? getUserById(session.sub) : null;
   const posts = session ? listPostsByAuthor(session.sub, session.sub) : [];
+  const friendCount = session ? listFriends(session.sub).length : 0;
   const displayName = user
     ? [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username
     : "Pueblo Connect";
@@ -35,9 +36,12 @@ export default async function ProfilePage() {
             <img src="/images/resources/timeline-1.jpg" alt="" />
           </figure>
           <div className="add-btn">
-            <span>0 followers</span>
-            {/* STATUS: needs backend/API — follower count and "Add Friend" are static for now. */}
-            <a href="#" title="" data-ripple="">Add Friend</a>
+            <span>{friendCount} friend{friendCount === 1 ? "" : "s"}</span>
+            {/* This page is always the signed-in member's own timeline (no
+                /profile/[username] route exists yet — see Timeline nav tab
+                below), so there's no one here to "Add Friend" to. Link to
+                the real friends page instead of a dead/self-targeting button. */}
+            <a href="/friends" title="" data-ripple="">Manage Friends</a>
           </div>
           <div className="container-fluid">
             <div className="row merged">
