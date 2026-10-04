@@ -137,6 +137,7 @@ export async function createCheckoutSession(opts: {
     "/checkout/sessions",
     {
       mode: "payment",
+      ui_mode: "hosted_page",
       success_url: opts.successUrl,
       cancel_url: opts.cancelUrl,
       client_reference_id: String(opts.userId),
@@ -155,6 +156,29 @@ export async function createCheckoutSession(opts: {
           },
         },
       ],
+      // --- Buyer-information & compliance options ---
+      // These match what Stripe's own Dashboard-generated quickstart code
+      // includes for a real business integration, not just a bare-bones
+      // demo: a business paying $49-199/month is worth collecting a real
+      // billing address, name, and phone for (receipts, fraud signals,
+      // support), and requiring explicit Terms-of-Service consent before
+      // taking money is the kind of thing worth having on by default.
+      billing_address_collection: "auto",
+      name_collection: {
+        individual: { enabled: true },
+        business: { enabled: true },
+      },
+      phone_number_collection: { enabled: true },
+      allow_promotion_codes: true,
+      // Shows a required "I agree to the Terms of Service" checkbox,
+      // linking to whatever URL is set under Stripe Dashboard -> Settings
+      // -> Public details -> Terms of service. Point that at
+      // https://<your-domain>/terms (the real page already built at
+      // src/app/(site)/terms) once the app has a real production domain —
+      // Stripe reads this from the account's business profile, not from
+      // anything this code sends.
+      consent_collection: { terms_of_service: "required" },
+      submit_type: "auto",
     },
     // Idempotency key: a client retry for the same user+plan within the
     // same second won't create a second Checkout Session.
