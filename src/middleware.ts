@@ -4,7 +4,7 @@ import { verifySessionEdge } from "@/lib/session-edge";
 const SESSION_COOKIE_NAME = "pueblo_session"; // kept in sync with src/lib/session.ts
 
 // Routes that require any logged-in user.
-const MEMBER_ROUTES = ["/newsfeed", "/profile", "/membership", "/explore-3d", "/notifications", "/messages", "/friends", "/nearby", "/passport"];
+const MEMBER_ROUTES = ["/newsfeed", "/profile", "/membership", "/explore-3d", "/notifications", "/messages", "/friends", "/nearby", "/passport", "/rewards"];
 // Routes that require role === 'admin'.
 const ADMIN_ROUTES = ["/admin"];
 
@@ -62,5 +62,6 @@ export const config = {
     "/friends/:path*",
     "/nearby/:path*",
     "/passport/:path*",
+    "/rewards/:path*",
   ],
 };

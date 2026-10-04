@@ -795,6 +795,28 @@ function getDb(): DatabaseSync {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_passport_stamps_user ON passport_stamps(user_id)`);
 
+    // Pueblo Rewards. The unifying points ledger — every other feature
+    // built this round (posts, following a business, reviews, RSVPs,
+    // check-ins, deal claims, Best of the Pueblo votes, Booth answers,
+    // approved Street Team submissions, Passport stamps) calls
+    // awardPoints at the moment the member earns it. ref_key is always
+    // a non-null string (never a bare nullable id) specifically so the
+    // UNIQUE index below actually dedupes one-off actions — SQLite
+    // treats NULL as always-distinct, the same gotcha passport_stamps'
+    // ref_id has to work around with an explicit existence check.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS rewards_point_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        action TEXT NOT NULL,
+        ref_key TEXT NOT NULL DEFAULT '',
+        points INTEGER NOT NULL,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (user_id, action, ref_key)
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_rewards_points_user ON rewards_point_events(user_id)`);
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -1426,7 +1448,9 @@ export function createPost(
       `INSERT INTO posts (author_id, body, target_type, target_id) VALUES (?, ?, ?, ?)`
     )
     .run(authorId, body, targetType, targetId);
-  return getPostById(Number(info.lastInsertRowid), authorId)!;
+  const postId = Number(info.lastInsertRowid);
+  awardPoints(authorId, "post", `post:${postId}`, POINT_VALUES.post);
+  return getPostById(postId, authorId)!;
 }
 
 export function getPostById(postId: number, viewerId: number | null): PostWithAuthor | undefined {
@@ -2724,6 +2748,7 @@ export function followBusiness(businessId: number, userId: number): void {
   db.prepare(
     "INSERT INTO business_followers (business_id, user_id) VALUES (?, ?)"
   ).run(businessId, userId);
+  awardPoints(userId, "follow_business", `business:${businessId}`, POINT_VALUES.follow_business);
 }
 
 export function unfollowBusiness(businessId: number, userId: number): void {
@@ -2794,6 +2819,7 @@ export function upsertBusinessReview(
      ON CONFLICT(business_id, user_id)
      DO UPDATE SET rating = excluded.rating, body = excluded.body, updated_at = datetime('now')`
   ).run(businessId, userId, rating, body);
+  awardPoints(userId, "business_review", `business:${businessId}`, POINT_VALUES.business_review);
   return db
     .prepare(`${BUSINESS_REVIEW_SELECT} WHERE br.business_id = ? AND br.user_id = ?`)
     .get(businessId, userId) as BusinessReviewWithUser;
@@ -3065,6 +3091,7 @@ export function rsvpToEvent(eventId: number, userId: number, status: "going" | "
     `INSERT INTO event_rsvps (event_id, user_id, status) VALUES (?, ?, ?)
      ON CONFLICT(event_id, user_id) DO UPDATE SET status = excluded.status`
   ).run(eventId, userId, status);
+  awardPoints(userId, "event_rsvp", `event:${eventId}`, POINT_VALUES.event_rsvp);
 }
 
 export function cancelRsvp(eventId: number, userId: number): void {
@@ -3112,6 +3139,7 @@ export function checkInToEvent(eventId: number, userId: number): void {
     .get(eventId, userId);
   if (existing) return;
   db.prepare("INSERT INTO event_checkins (event_id, user_id) VALUES (?, ?)").run(eventId, userId);
+  awardPoints(userId, "event_checkin", `event:${eventId}`, POINT_VALUES.event_checkin);
 }
 
 export function isCheckedIn(eventId: number, userId: number): boolean {
@@ -3295,6 +3323,7 @@ export function claimDeal(dealId: number, userId: number): void {
     .get(dealId, userId);
   if (existing) return;
   db.prepare("INSERT INTO deal_claims (deal_id, user_id) VALUES (?, ?)").run(dealId, userId);
+  awardPoints(userId, "deal_claim", `deal:${dealId}`, POINT_VALUES.deal_claim);
 }
 
 export function hasClaimedDeal(dealId: number, userId: number): boolean {
@@ -3454,6 +3483,7 @@ export function castBopVote(
     `INSERT INTO bop_votes (period_id, category_id, voter_id, business_id) VALUES (?, ?, ?, ?)
      ON CONFLICT(period_id, category_id, voter_id) DO UPDATE SET business_id = excluded.business_id`
   ).run(periodId, categoryId, voterId, businessId);
+  awardPoints(voterId, "bop_vote", `bop:${periodId}:${categoryId}`, POINT_VALUES.bop_vote);
 }
 
 export function getBopUserVote(
@@ -3681,11 +3711,28 @@ export function reviewStreetTeamSubmission(
   note: string | null
 ): void {
   const db = getDb();
-  db.prepare(
-    `UPDATE street_team_submissions
-     SET status = ?, reviewed_by = ?, reviewed_at = datetime('now'), review_note = ?
-     WHERE id = ? AND status = 'pending'`
-  ).run(decision, reviewerId, note, submissionId);
+  const info = db
+    .prepare(
+      `UPDATE street_team_submissions
+       SET status = ?, reviewed_by = ?, reviewed_at = datetime('now'), review_note = ?
+       WHERE id = ? AND status = 'pending'`
+    )
+    .run(decision, reviewerId, note, submissionId);
+
+  // Only award points when the row actually transitioned (i.e. it was
+  // still pending) and the decision was 'approved' — a rejected
+  // submission, or re-reviewing an already-decided one, earns nothing.
+  if (info.changes > 0 && decision === "approved") {
+    const submission = getStreetTeamSubmissionById(submissionId);
+    if (submission) {
+      awardPoints(
+        submission.submitter_id,
+        "street_team_approved",
+        `streetteam:${submissionId}`,
+        POINT_VALUES.street_team_approved
+      );
+    }
+  }
 }
 
 export type StreetTeamBadge = "community_correspondent" | "pueblo_photographer" | "pueblo_reporter";
@@ -3859,6 +3906,7 @@ export function submitBoothAnswer(
        media_url = excluded.media_url,
        updated_at = datetime('now')`
   ).run(questionId, userId, answerType, answerText, mediaUrl);
+  awardPoints(userId, "booth_answer", `booth:${questionId}`, POINT_VALUES.booth_answer);
   return getUserBoothAnswer(questionId, userId)!;
 }
 
@@ -3923,6 +3971,7 @@ export function grantPassportStamp(
   const info = db
     .prepare(`INSERT INTO passport_stamps (user_id, category, ref_id, label) VALUES (?, ?, ?, ?)`)
     .run(userId, category, refId, label);
+  awardPoints(userId, "passport_stamp", `passport:${category}:${refId ?? "x"}`, POINT_VALUES.passport_stamp);
   return findPassportStamp(userId, category, refId) ?? {
     id: Number(info.lastInsertRowid),
     user_id: userId,
@@ -3971,3 +4020,137 @@ export function getPassportRewardsForUser(userId: number): PassportReward[] {
     unlocked: count >= tier.threshold,
   }));
 }
+
+// ---------------------------------------------------------------------
+// Pueblo Rewards: the points engine every other feature feeds. Each
+// action awards points exactly once per distinct ref_key — see the
+// awardPoints call sites throughout this file (createPost,
+// followBusiness, upsertBusinessReview, rsvpToEvent, checkInToEvent,
+// claimDeal, castBopVote, submitBoothAnswer, reviewStreetTeamSubmission,
+// grantPassportStamp). Levels are computed from total points, not
+// stored, same reasoning as every other threshold-based reward in this
+// app (Street Team badges, Passport rewards).
+
+export const POINT_VALUES = {
+  post: 2,
+  follow_business: 3,
+  business_review: 10,
+  event_rsvp: 3,
+  event_checkin: 5,
+  deal_claim: 3,
+  bop_vote: 5,
+  booth_answer: 5,
+  street_team_approved: 15,
+  passport_stamp: 5,
+} as const;
+
+export type RewardsAction = keyof typeof POINT_VALUES;
+
+export type RewardsPointEvent = {
+  id: number;
+  user_id: number;
+  action: RewardsAction;
+  ref_key: string;
+  points: number;
+  created_at: string;
+};
+
+// ON CONFLICT DO NOTHING rather than a check-then-insert: ref_key is
+// always a non-null string here, so the UNIQUE index alone is enough
+// to make this idempotent — the same action on the same thing never
+// awards twice.
+export function awardPoints(userId: number, action: RewardsAction, refKey: string, points: number): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO rewards_point_events (user_id, action, ref_key, points)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(user_id, action, ref_key) DO NOTHING`
+  ).run(userId, action, refKey, points);
+}
+
+export function getTotalPointsForUser(userId: number): number {
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT COALESCE(SUM(points), 0) AS total FROM rewards_point_events WHERE user_id = ?`)
+    .get(userId) as { total: number };
+  return row.total;
+}
+
+export function listPointEventsForUser(userId: number, limit = 100): RewardsPointEvent[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT * FROM rewards_point_events WHERE user_id = ? ORDER BY created_at DESC LIMIT ?`
+    )
+    .all(userId, limit) as RewardsPointEvent[];
+}
+
+export type RewardsLeaderboardRow = {
+  user_id: number;
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+  total_points: number;
+};
+
+// Site-wide leaderboard — top members by total points. Ties broken by
+// who crossed that total first (MIN(created_at) of their most recent
+// contributing event isn't tracked; ordering by user_id as a stable
+// tiebreaker is good enough for a leaderboard, not a competition prize).
+export function listRewardsLeaderboard(limit = 20): RewardsLeaderboardRow[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT u.id AS user_id, u.username, u.first_name, u.last_name,
+              COALESCE(SUM(r.points), 0) AS total_points
+       FROM users u
+       JOIN rewards_point_events r ON r.user_id = u.id
+       GROUP BY u.id
+       ORDER BY total_points DESC, u.id ASC
+       LIMIT ?`
+    )
+    .all(limit) as RewardsLeaderboardRow[];
+}
+
+export type RewardsLevel = {
+  key: string;
+  label: string;
+  threshold: number;
+  unlocked: boolean;
+};
+
+const REWARDS_LEVEL_TIERS: { key: string; label: string; threshold: number }[] = [
+  { key: "newcomer", label: "Newcomer", threshold: 0 },
+  { key: "regular", label: "Pueblo Regular", threshold: 50 },
+  { key: "champion", label: "Pueblo Champion", threshold: 150 },
+  { key: "legend", label: "Pueblo Legend", threshold: 400 },
+];
+
+export function getRewardsLevelsForUser(userId: number): RewardsLevel[] {
+  const total = getTotalPointsForUser(userId);
+  return REWARDS_LEVEL_TIERS.map((tier) => ({ ...tier, unlocked: total >= tier.threshold }));
+}
+
+// The highest unlocked tier — what to show as "your level" on the
+// Rewards page and anywhere else a single label is wanted.
+export function getCurrentRewardsLevel(userId: number): RewardsLevel {
+  const levels = getRewardsLevelsForUser(userId);
+  const unlocked = levels.filter((l) => l.unlocked);
+  return unlocked[unlocked.length - 1] ?? levels[0];
+}
+
+// Human-readable label for each rewards action — shared by the
+// /api/rewards route and the /rewards page itself (a Server Component
+// that reads point history directly rather than through its own API).
+export const REWARDS_ACTION_LABELS: Record<RewardsAction, string> = {
+  post: "Posted on a wall",
+  follow_business: "Followed a business",
+  business_review: "Left a business review",
+  event_rsvp: "RSVP'd to an event",
+  event_checkin: "Checked into an event",
+  deal_claim: "Claimed a deal",
+  bop_vote: "Voted in Best of the Pueblo",
+  booth_answer: "Answered The Pueblo Booth",
+  street_team_approved: "Street Team submission approved",
+  passport_stamp: "Earned a Pueblo Passport stamp",
+};
