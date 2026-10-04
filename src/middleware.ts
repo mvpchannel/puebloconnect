@@ -4,7 +4,7 @@ import { verifySessionEdge } from "@/lib/session-edge";
 const SESSION_COOKIE_NAME = "pueblo_session"; // kept in sync with src/lib/session.ts
 
 // Routes that require any logged-in user.
-const MEMBER_ROUTES = ["/newsfeed", "/profile"];
+const MEMBER_ROUTES = ["/newsfeed", "/profile", "/membership"];
 // Routes that require role === 'admin'.
 const ADMIN_ROUTES = ["/admin"];
 
@@ -51,5 +51,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/newsfeed/:path*", "/profile/:path*", "/admin/:path*"],
+  matcher: ["/newsfeed/:path*", "/profile/:path*", "/admin/:path*", "/membership/:path*"],
 };

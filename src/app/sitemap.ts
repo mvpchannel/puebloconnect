@@ -8,7 +8,16 @@ import type { MetadataRoute } from "next";
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = "https://pueblo.connect"; // TODO: replace with the real production domain
 
-  const routes = ["", "/newsfeed", "/login", "/profile", "/terms", "/sitemap-page"];
+  const routes = [
+    "",
+    "/newsfeed",
+    "/login",
+    "/profile",
+    "/terms",
+    "/sitemap-page",
+    "/membership",
+    "/advertise",
+  ];
 
   return routes.map((route) => ({
     url: `${base}${route}`,

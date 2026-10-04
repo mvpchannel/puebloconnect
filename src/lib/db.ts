@@ -46,6 +46,30 @@ function getDb(): DatabaseSync {
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS business_memberships (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+        plan TEXT NOT NULL CHECK (plan IN ('basic', 'plus', 'premier')),
+        status TEXT NOT NULL DEFAULT 'inactive' CHECK (status IN ('inactive', 'active', 'expired')),
+        current_period_start TEXT,
+        current_period_end TEXT,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS payment_transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        paypal_order_id TEXT NOT NULL UNIQUE,
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        plan TEXT NOT NULL CHECK (plan IN ('basic', 'plus', 'premier')),
+        amount_cents INTEGER NOT NULL,
+        currency TEXT NOT NULL DEFAULT 'USD',
+        status TEXT NOT NULL DEFAULT 'created' CHECK (status IN ('created', 'completed', 'failed')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        completed_at TEXT
+      )
+    `);
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -123,4 +147,137 @@ export function updateUserRole(id: number, role: "member" | "admin"): void {
 export function deleteUser(id: number): void {
   const db = getDb();
   db.prepare("DELETE FROM users WHERE id = ?").run(id);
+}
+
+// ---------------------------------------------------------------------
+// Business memberships + PayPal payment transactions
+// ---------------------------------------------------------------------
+
+export type PlanId = "basic" | "plus" | "premier";
+
+export type PaymentTransaction = {
+  id: number;
+  paypal_order_id: string;
+  user_id: number;
+  plan: PlanId;
+  amount_cents: number;
+  currency: string;
+  status: "created" | "completed" | "failed";
+  created_at: string;
+  completed_at: string | null;
+};
+
+export type BusinessMembership = {
+  id: number;
+  user_id: number;
+  plan: PlanId;
+  status: "inactive" | "active" | "expired";
+  current_period_start: string | null;
+  current_period_end: string | null;
+  updated_at: string;
+};
+
+// Called right after a PayPal order is created (status CREATED), before
+// the buyer has approved or paid anything — so we have a record even if
+// they abandon checkout. Updated to 'completed' only after a real,
+// verified capture (see markTransactionCompleted).
+export function recordOrderCreated(
+  paypalOrderId: string,
+  userId: number,
+  plan: PlanId,
+  amountCents: number,
+  currency = "USD"
+): void {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO payment_transactions
+       (paypal_order_id, user_id, plan, amount_cents, currency, status)
+     VALUES (?, ?, ?, ?, ?, 'created')`
+  ).run(paypalOrderId, userId, plan, amountCents, currency);
+}
+
+export function getTransactionByOrderId(
+  paypalOrderId: string
+): PaymentTransaction | undefined {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM payment_transactions WHERE paypal_order_id = ?")
+    .get(paypalOrderId) as PaymentTransaction | undefined;
+}
+
+export function markTransactionCompleted(paypalOrderId: string): void {
+  const db = getDb();
+  db.prepare(
+    `UPDATE payment_transactions
+     SET status = 'completed', completed_at = datetime('now')
+     WHERE paypal_order_id = ?`
+  ).run(paypalOrderId);
+}
+
+export function markTransactionFailed(paypalOrderId: string): void {
+  const db = getDb();
+  db.prepare(
+    "UPDATE payment_transactions SET status = 'failed' WHERE paypal_order_id = ?"
+  ).run(paypalOrderId);
+}
+
+export function listTransactionsForUser(userId: number): PaymentTransaction[] {
+  const db = getDb();
+  return db
+    .prepare(
+      "SELECT * FROM payment_transactions WHERE user_id = ? ORDER BY created_at DESC"
+    )
+    .all(userId) as PaymentTransaction[];
+}
+
+export function listAllTransactions(): PaymentTransaction[] {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM payment_transactions ORDER BY created_at DESC")
+    .all() as PaymentTransaction[];
+}
+
+// Activates (or renews) a membership for one billing period (30 days from
+// now) after a verified, completed PayPal capture. This is a one-time
+// Orders-API payment representing "one month," not an auto-renewing
+// subscription — see README for why, and what real auto-renewal would
+// need (PayPal Subscriptions API) instead.
+export function activateMembership(userId: number, plan: PlanId): BusinessMembership {
+  const db = getDb();
+  const now = new Date();
+  const periodEnd = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  db.prepare(
+    `INSERT INTO business_memberships (user_id, plan, status, current_period_start, current_period_end, updated_at)
+     VALUES (?, ?, 'active', ?, ?, datetime('now'))
+     ON CONFLICT(user_id) DO UPDATE SET
+       plan = excluded.plan,
+       status = 'active',
+       current_period_start = excluded.current_period_start,
+       current_period_end = excluded.current_period_end,
+       updated_at = datetime('now')`
+  ).run(userId, plan, now.toISOString(), periodEnd.toISOString());
+  return getMembershipForUser(userId)!;
+}
+
+export function getMembershipForUser(userId: number): BusinessMembership | undefined {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM business_memberships WHERE user_id = ?")
+    .get(userId) as BusinessMembership | undefined;
+}
+
+export function listActiveMemberships(): (BusinessMembership & {
+  username: string;
+  email: string;
+})[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT bm.*, u.username, u.email
+       FROM business_memberships bm
+       JOIN users u ON u.id = bm.user_id
+       WHERE bm.status = 'active'
+       ORDER BY bm.updated_at DESC`
+    )
+    .all() as (BusinessMembership & { username: string; email: string })[];
 }

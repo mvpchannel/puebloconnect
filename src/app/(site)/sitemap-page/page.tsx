@@ -61,6 +61,17 @@ export default function SitemapPage() {
                     <li><Link href="/profile" title="">Timeline</Link></li>
                   </ul>
 
+                  <h4>Business</h4>
+                  <ul className="naves">
+                    <li><Link href="/membership" title="">Business Membership</Link></li>
+                    <li><Link href="/advertise" title="">Advertise</Link></li>
+                  </ul>
+
+                  <h4>Admin</h4>
+                  <ul className="naves">
+                    <li><Link href="/admin" title="">Admin panel</Link> (role: admin required)</li>
+                  </ul>
+
                   <h4>Support</h4>
                   <ul className="naves">
                     <li><Link href="/terms" title="">Terms &amp; conditions</Link></li>

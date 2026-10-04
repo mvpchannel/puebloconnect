@@ -95,7 +95,7 @@ export default function Header() {
               <ul>
                 <li><Link href="/profile" title="">Timeline</Link></li>
                 <li><Link href="/terms" title="">Terms &amp; conditions</Link></li>
-                <li><Link href="/sitemap" title="">Sitemap</Link></li>
+                <li><Link href="/sitemap-page" title="">Sitemap</Link></li>
               </ul>
             </li>
           </ul>
@@ -134,8 +134,10 @@ export default function Header() {
             <li>
               <a href="#" title="">More pages</a>
               <ul>
+                <li><Link href="/membership" title="">Business Membership</Link></li>
+                <li><Link href="/advertise" title="">Advertise</Link></li>
                 <li><Link href="/terms" title="">Terms &amp; conditions</Link></li>
-                <li><Link href="/sitemap" title="">Sitemap</Link></li>
+                <li><Link href="/sitemap-page" title="">Sitemap</Link></li>
               </ul>
             </li>
           </ul>
