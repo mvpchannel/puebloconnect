@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 type PostCardProps = {
   postId: number;
+  authorId: number;
   authorName: string;
   authorImage: string;
   publishedLabel: string;
@@ -12,6 +13,11 @@ type PostCardProps = {
   initialLiked?: boolean;
   initialCommentCount?: number;
   isLoggedIn: boolean;
+  // Who's viewing — used only to decide whether the delete control shows.
+  // The DELETE route re-checks ownership/admin itself server-side, so this
+  // is a UI convenience, not the actual authorization boundary.
+  currentUserId?: number | null;
+  isAdmin?: boolean;
 };
 
 type Comment = {
@@ -28,6 +34,7 @@ type Comment = {
 // earlier client-only placeholder.
 export default function PostCard({
   postId,
+  authorId,
   authorName,
   authorImage,
   publishedLabel,
@@ -36,16 +43,40 @@ export default function PostCard({
   initialLiked = false,
   initialCommentCount = 0,
   isLoggedIn,
+  currentUserId = null,
+  isAdmin = false,
 }: PostCardProps) {
   const [liked, setLiked] = useState(initialLiked);
   const [likeCount, setLikeCount] = useState(initialLikeCount);
   const [likeBusy, setLikeBusy] = useState(false);
+  const [deleted, setDeleted] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const canDelete = isLoggedIn && (currentUserId === authorId || isAdmin);
 
   const [commentText, setCommentText] = useState("");
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentCount, setCommentCount] = useState(initialCommentCount);
   const [commentsLoaded, setCommentsLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  async function deletePost() {
+    if (!confirm("Delete this post? This can't be undone.")) return;
+    setDeleting(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/posts/${postId}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Couldn't delete that post.");
+        return;
+      }
+      setDeleted(true);
+    } catch {
+      setError("Couldn't reach the server.");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   // Comments are loaded lazily on mount rather than passed down from the
   // server — keeps the initial newsfeed page fetch to one query per post
@@ -146,8 +177,10 @@ export default function PostCard({
     }
   }
 
+  if (deleted) return null;
+
   return (
-    <div className="central-meta item">
+    <div className="central-meta item" style={{ position: "relative" }}>
       <div className="user-post">
         <div className="friend-info">
           <figure>
@@ -157,6 +190,25 @@ export default function PostCard({
             <ins><a href="#" title="">{authorName}</a></ins>
             <span>published: {publishedLabel}</span>
           </div>
+          {canDelete && (
+            <div style={{ position: "absolute", top: 14, right: 14, zIndex: 1 }}>
+              <button
+                type="button"
+                onClick={deletePost}
+                disabled={deleting}
+                title="Delete post"
+                style={{
+                  background: "none",
+                  border: "none",
+                  color: "#bbb",
+                  cursor: "pointer",
+                  fontSize: 14,
+                }}
+              >
+                <i className="fa fa-trash-o" />
+              </button>
+            </div>
+          )}
           <div className="post-meta">
             <div className="description">
               <p>{text}</p>

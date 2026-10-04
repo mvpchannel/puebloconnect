@@ -73,6 +73,9 @@ export default async function NewsfeedPage() {
                     <PostCard
                       key={post.id}
                       postId={post.id}
+                      authorId={post.author_id}
+                      currentUserId={session?.sub ?? null}
+                      isAdmin={session?.role === "admin"}
                       authorName={
                         [post.author_first_name, post.author_last_name]
                           .filter(Boolean)

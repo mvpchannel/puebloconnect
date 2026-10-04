@@ -92,6 +92,9 @@ export default async function ProfilePage() {
                         <PostCard
                           key={post.id}
                           postId={post.id}
+                          authorId={post.author_id}
+                          currentUserId={session?.sub ?? null}
+                          isAdmin={session?.role === "admin"}
                           authorName={displayName}
                           authorImage={
                             post.author_profile_photo_path ||
