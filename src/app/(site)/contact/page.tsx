@@ -12,10 +12,8 @@ export const metadata: Metadata = {
 // section is dropped — it's a decorative vendor-template iframe with no
 // real office address behind it (the footer already treats the address as
 // "coming soon"); the real contact info (location, phone, email) is kept.
-// The message form has a real onSubmit handler (ContactForm.tsx, a client
-// component) that honestly explains there's no backend inbox yet, per this
-// project's no-fake-functionality rule — see PostComposer.tsx for the same
-// pattern.
+// The message form (ContactForm.tsx) really submits to /api/contact now —
+// see that route and src/lib/db.ts's contact_messages table.
 export default function ContactPage() {
   return (
     <>

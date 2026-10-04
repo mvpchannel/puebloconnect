@@ -1071,6 +1071,25 @@ function getDb(): DatabaseSync {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at)`);
 
+    // Contact Us form submissions (see src/app/(site)/contact/ContactForm.tsx
+    // and /api/contact) — previously the form just set local state and told
+    // the person it wasn't wired to anything. user_id is nullable because
+    // the contact form works for a signed-out visitor too.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS contact_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER REFERENCES users(id),
+        name TEXT NOT NULL,
+        email TEXT NOT NULL,
+        phone TEXT,
+        company TEXT,
+        message TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'read', 'replied', 'closed')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_contact_messages_created ON contact_messages(created_at)`);
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -5411,4 +5430,50 @@ export function deleteNotification(notificationId: number, userId: number): bool
     .prepare(`DELETE FROM notifications WHERE id = ? AND user_id = ?`)
     .run(notificationId, userId);
   return info.changes > 0;
+}
+
+// ---------------------------------------------------------------------
+// Contact Us form (see contact_messages table above, src/app/api/contact,
+// and src/app/(site)/contact/ContactForm.tsx)
+// ---------------------------------------------------------------------
+
+export type ContactMessage = {
+  id: number;
+  user_id: number | null;
+  name: string;
+  email: string;
+  phone: string | null;
+  company: string | null;
+  message: string;
+  status: "new" | "read" | "replied" | "closed";
+  created_at: string;
+};
+
+export function createContactMessage(fields: {
+  userId: number | null;
+  name: string;
+  email: string;
+  phone: string | null;
+  company: string | null;
+  message: string;
+}): ContactMessage {
+  const db = getDb();
+  const info = db
+    .prepare(
+      `INSERT INTO contact_messages (user_id, name, email, phone, company, message)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run(fields.userId, fields.name, fields.email, fields.phone, fields.company, fields.message);
+  return db
+    .prepare("SELECT * FROM contact_messages WHERE id = ?")
+    .get(Number(info.lastInsertRowid)) as ContactMessage;
+}
+
+// For a future admin "contact messages" inbox page — not built yet, but
+// the data is real and queryable the moment it is.
+export function listContactMessages(limit = 100): ContactMessage[] {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT ?")
+    .all(limit) as ContactMessage[];
 }

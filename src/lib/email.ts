@@ -57,6 +57,12 @@ const FROM_NAME = "Pueblo Connect";
 const FROM_EMAIL = process.env.EMAIL_FROM_ADDRESS || "no-reply@pueblo-connect.example";
 const APP_URL = process.env.APP_URL || "http://localhost:3000";
 
+// Where a Contact Us submission is delivered (see buildContactMessageEmail
+// below and /api/contact) — same address already shown to visitors on the
+// Contact and About pages, so this isn't a new inbox being invented, just
+// the real one the site already advertises.
+export const SITE_CONTACT_EMAIL = "latenitegano@gmail.com";
+
 export type EmailKind =
   | "welcome_verify"
   | "email_verified"
@@ -65,11 +71,12 @@ export type EmailKind =
   | "friend_request"
   | "friend_accepted"
   | "new_message"
-  | "report_status_update";
+  | "report_status_update"
+  | "business_inquiry";
 
 // Still future, not implemented yet: new_comment, new_reply, mention,
-// event_invite, event_reminder, business_inquiry, pueblo_deal,
-// pueblo_live, daily_pueblo_update. Adding one of those later means:
+// event_invite, event_reminder, pueblo_deal, pueblo_live,
+// daily_pueblo_update. Adding one of those later means:
 //   1. Add the kind to EmailKind above (and to QueuedEmailKind in db.ts
 //      if it should go through the queue rather than send inline).
 //   2. Add a template function below, same shape as the ones here.
@@ -85,6 +92,21 @@ export type EmailKind =
 // to make an HTTP request wait on mail delivery.
 
 type EmailMessage = { to: string; subject: string; html: string; text: string };
+
+// Every other template below only ever interpolates trusted DB data
+// (a member's own name). The Contact Us template is the first one that
+// has to interpolate raw visitor-submitted text into HTML, so it needs
+// this — otherwise a message containing "<" or "&" would corrupt the
+// rendered email (not an XSS risk to the member reading it in their own
+// mail client, but still real HTML breakage worth avoiding).
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 function wrapHtml(bodyHtml: string): string {
   return `<!DOCTYPE html>
@@ -257,6 +279,39 @@ export function buildReportStatusUpdateEmail(
       `A neighborhood report you're tracking — "${reportDescription}" — is now marked ${label}.\n\n` +
       (note ? `${note}\n\n` : "") +
       `View it: ${reportUrl}`,
+  };
+}
+
+function contactMessageTemplate(name: string, email: string, phone: string | null, company: string | null, message: string): string {
+  return wrapHtml(`
+    <p style="font-size:18px;font-weight:bold;margin-top:0;">New Contact Us message</p>
+    <p><strong>From:</strong> ${escapeHtml(name)} &lt;${escapeHtml(email)}&gt;</p>
+    ${phone ? `<p><strong>Phone:</strong> ${escapeHtml(phone)}</p>` : ""}
+    ${company ? `<p><strong>Company:</strong> ${escapeHtml(company)}</p>` : ""}
+    <p style="white-space:pre-wrap;border-top:1px solid #eee;padding-top:16px;margin-top:16px;">${escapeHtml(message)}</p>
+  `);
+}
+
+// Delivered to SITE_CONTACT_EMAIL (the site owner's inbox, not the
+// submitter's) — the Contact Us form has no reply-to-the-member flow of
+// its own, so this is the honest equivalent of "someone will read this
+// and reach out," same as any real contact form.
+export function buildContactMessageEmail(
+  name: string,
+  email: string,
+  phone: string | null,
+  company: string | null,
+  message: string
+): EmailMessage {
+  return {
+    to: SITE_CONTACT_EMAIL,
+    subject: `Contact form: ${name}`,
+    html: contactMessageTemplate(name, email, phone, company, message),
+    text:
+      `New Contact Us message from ${name} <${email}>` +
+      (phone ? `\nPhone: ${phone}` : "") +
+      (company ? `\nCompany: ${company}` : "") +
+      `\n\n${message}`,
   };
 }
 

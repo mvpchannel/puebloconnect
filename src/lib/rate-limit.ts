@@ -26,6 +26,7 @@ export const RATE_LIMITS = {
   forgotPassword: { max: 4, windowSeconds: 60 * 60 } as RateLimitPolicy,
   resetPassword: { max: 10, windowSeconds: 60 * 60 } as RateLimitPolicy,
   resendVerification: { max: 4, windowSeconds: 60 * 60 } as RateLimitPolicy,
+  contact: { max: 5, windowSeconds: 60 * 60 } as RateLimitPolicy,
 } as const;
 
 // Call BEFORE doing the sensitive work. Checks the limit, and — only if
