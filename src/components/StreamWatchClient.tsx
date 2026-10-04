@@ -215,6 +215,7 @@ export default function StreamWatchClient({
   const [clipTimestamp, setClipTimestamp] = useState("");
   const [playbackSrc, setPlaybackSrc] = useState(embedSrc);
   const [activeClipId, setActiveClipId] = useState<number | null>(null);
+  const [theaterMode, setTheaterMode] = useState(false);
 
   const [showHostTools, setShowHostTools] = useState(false);
   const [announcementDraft, setAnnouncementDraft] = useState("");
@@ -515,6 +516,22 @@ export default function StreamWatchClient({
     }).catch(() => {});
     setSpotlightRequests((prev) => prev.map((r) => (r.id === requestId ? { ...r, status: status2 } : r)));
   }
+
+  // Theater mode: lock page scroll while it's open, and let Escape
+  // close it (same affordance browsers use for actual fullscreen).
+  useEffect(() => {
+    if (!theaterMode) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setTheaterMode(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [theaterMode]);
 
   function playClip(clip: Clip) {
     setActiveClipId(clip.id);
@@ -909,8 +926,33 @@ export default function StreamWatchClient({
 
   return (
     <div>
+      {theaterMode && (
+        <div
+          onClick={() => setTheaterMode(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.92)", zIndex: 1000 }}
+        />
+      )}
+
       <div className="central-meta item" style={{ overflow: "hidden" }}>
-        <div style={{ position: "relative", paddingBottom: "56.25%", background: "#000" }}>
+        <div
+          style={
+            theaterMode
+              ? {
+                  position: "fixed",
+                  top: 64,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  width: "92vw",
+                  maxWidth: 1480,
+                  height: "calc(100vh - 128px)",
+                  background: "#000",
+                  zIndex: 1001,
+                  borderRadius: 8,
+                  overflow: "hidden",
+                }
+              : { position: "relative", paddingBottom: "56.25%", background: "#000" }
+          }
+        >
           <iframe
             src={playbackSrc}
             title="Live stream"
@@ -981,6 +1023,31 @@ export default function StreamWatchClient({
               <i className="fa fa-eye" style={{ marginRight: 6 }} />
               {liveViewerCount} watching
             </div>
+          )}
+
+          {theaterMode && (
+            <button
+              type="button"
+              onClick={() => setTheaterMode(false)}
+              title="Exit theater mode"
+              style={{
+                position: "absolute",
+                top: 12,
+                left: "50%",
+                transform: "translateX(-50%)",
+                zIndex: 3,
+                background: "rgba(0,0,0,0.6)",
+                color: "#fff",
+                border: "none",
+                borderRadius: 3,
+                padding: "5px 10px",
+                cursor: "pointer",
+                fontSize: 12,
+              }}
+            >
+              <i className="fa fa-compress" style={{ marginRight: 6 }} />
+              Exit Theater Mode
+            </button>
           )}
 
           {/* Floating reactions layer */}
@@ -1060,6 +1127,17 @@ export default function StreamWatchClient({
           )}
 
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button
+              className="mtr-btn signin"
+              type="button"
+              onClick={() => setTheaterMode((v) => !v)}
+              title="Theater mode"
+            >
+              <span>
+                <i className={`fa ${theaterMode ? "fa-compress" : "fa-arrows-alt"}`} style={{ marginRight: 6 }} />
+                Theater
+              </span>
+            </button>
             {isHost && status === "scheduled" && (
               <button className="mtr-btn signup" type="button" onClick={goLive}>
                 <span>Go Live</span>
