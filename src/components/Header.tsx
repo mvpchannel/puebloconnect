@@ -145,6 +145,7 @@ export default function Header() {
                 <li><Link href="/events" title="">Events</Link></li>
                 <li><Link href="/deals" title="">Pueblo Deals</Link></li>
                 <li><Link href="/best-of" title="">Best of the Pueblo</Link></li>
+                <li><Link href="/reports" title="">Report &amp; Track</Link></li>
                 <li><Link href="/street-team" title="">Pueblo Street Team</Link></li>
                 <li><Link href="/booth" title="">The Pueblo Booth</Link></li>
                 <li><Link href="/passport" title="">Pueblo Passport</Link></li>

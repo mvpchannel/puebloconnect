@@ -64,7 +64,8 @@ export type EmailKind =
   | "password_changed"
   | "friend_request"
   | "friend_accepted"
-  | "new_message";
+  | "new_message"
+  | "report_status_update";
 
 // Still future, not implemented yet: new_comment, new_reply, mention,
 // event_invite, event_reminder, business_inquiry, pueblo_deal,
@@ -216,6 +217,49 @@ function newMessageTemplate(fromName: string, messagesUrl: string): string {
   `);
 }
 
+const REPORT_STATUS_LABELS: Record<string, string> = {
+  submitted: "Submitted",
+  acknowledged: "Acknowledged",
+  in_progress: "In Progress",
+  resolved: "Resolved",
+  closed: "Closed",
+};
+
+function reportStatusUpdateTemplate(
+  reportDescription: string,
+  newStatus: string,
+  note: string | null,
+  reportUrl: string
+): string {
+  const label = REPORT_STATUS_LABELS[newStatus] || newStatus;
+  return wrapHtml(`
+    <p style="font-size:18px;font-weight:bold;margin-top:0;">Report update: ${label}</p>
+    <p>A neighborhood report you're tracking — "<strong>${reportDescription}</strong>" — is now marked <strong>${label}</strong>.</p>
+    ${note ? `<p style="color:#555;">${note}</p>` : ""}
+    ${button(reportUrl, "VIEW REPORT")}
+  `);
+}
+
+export function buildReportStatusUpdateEmail(
+  to: string,
+  reportId: number,
+  reportDescription: string,
+  newStatus: string,
+  note: string | null
+): EmailMessage {
+  const reportUrl = `${APP_URL}/reports/${reportId}`;
+  const label = REPORT_STATUS_LABELS[newStatus] || newStatus;
+  return {
+    to,
+    subject: `Report update: ${label}`,
+    html: reportStatusUpdateTemplate(reportDescription, newStatus, note, reportUrl),
+    text:
+      `A neighborhood report you're tracking — "${reportDescription}" — is now marked ${label}.\n\n` +
+      (note ? `${note}\n\n` : "") +
+      `View it: ${reportUrl}`,
+  };
+}
+
 export function buildFriendRequestEmail(to: string, fromName: string): EmailMessage {
   const requestsUrl = `${APP_URL}/friends`;
   return {
@@ -327,6 +371,14 @@ function templateForQueuedEmail(email: QueuedEmail): EmailMessage {
       return buildFriendAcceptedEmail(email.to_address, payload.fromName);
     case "new_message":
       return buildNewMessageEmail(email.to_address, payload.fromName);
+    case "report_status_update":
+      return buildReportStatusUpdateEmail(
+        email.to_address,
+        Number(payload.reportId),
+        payload.reportDescription,
+        payload.newStatus,
+        payload.note ?? null
+      );
     default:
       // Exhaustiveness guard — a new QueuedEmailKind added to db.ts
       // without a case here is a bug, not a silently-dropped email.

@@ -55,6 +55,10 @@ export default function Sidebar() {
             <Link href="/best-of" title="">Best of the Pueblo</Link>
           </li>
           <li>
+            <i className="ti-flag-alt-2" />
+            <Link href="/reports" title="">Report &amp; Track</Link>
+          </li>
+          <li>
             <i className="ti-camera" />
             <Link href="/street-team" title="">Pueblo Street Team</Link>
           </li>

@@ -1007,6 +1007,48 @@ function getDb(): DatabaseSync {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_stream_clips_stream ON stream_clips(stream_id)`);
 
+    // Report & Track — 1-tap neighborhood issue reports (street light
+    // outages, dumped items, park maintenance, traffic hazards).
+    // latitude/longitude are optional and reuse the same columns/math as
+    // findNearbyUsers (see geo.ts) — a report a member submits with
+    // their current location becomes a real point other members can
+    // search "near me", not a decorative map pin.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS neighborhood_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        reporter_id INTEGER NOT NULL REFERENCES users(id),
+        category TEXT NOT NULL CHECK (category IN ('street_light', 'dumped_item', 'park_maintenance', 'traffic_hazard', 'other')),
+        description TEXT NOT NULL,
+        photo_url TEXT,
+        location_text TEXT,
+        latitude REAL,
+        longitude REAL,
+        status TEXT NOT NULL DEFAULT 'submitted' CHECK (status IN ('submitted', 'acknowledged', 'in_progress', 'resolved', 'closed')),
+        resolution_note TEXT,
+        resolved_by INTEGER REFERENCES users(id),
+        resolved_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_neighborhood_reports_status ON neighborhood_reports(status, created_at)`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_neighborhood_reports_lat_lng ON neighborhood_reports(latitude, longitude)`);
+
+    // "Track" = follow a report for status-change notifications (real
+    // emails via the existing queued_emails worker — there's no mobile
+    // push infrastructure in this app, so this is the honest version of
+    // "real-time local push notifications").
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS neighborhood_report_followers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        report_id INTEGER NOT NULL REFERENCES neighborhood_reports(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (report_id, user_id)
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_neighborhood_report_followers_report ON neighborhood_report_followers(report_id)`);
+
     global.__pueblo_db__ = db;
   }
   return global.__pueblo_db__;
@@ -2282,7 +2324,7 @@ export function countUnreadMessages(userId: number): number {
 // src/lib/email.ts (processEmailQueue there reads/writes through these
 // functions so this file stays the only thing that touches SQLite).
 
-export type QueuedEmailKind = "friend_request" | "friend_accepted" | "new_message";
+export type QueuedEmailKind = "friend_request" | "friend_accepted" | "new_message" | "report_status_update";
 
 export type QueuedEmail = {
   id: number;
@@ -5010,4 +5052,204 @@ export function getMemberBadgesForUser(userId: number): MemberBadge[] {
   }
 
   return badges;
+}
+
+// ---- Report & Track (neighborhood issue reports) ---------------------------
+
+export type ReportCategory = "street_light" | "dumped_item" | "park_maintenance" | "traffic_hazard" | "other";
+export type ReportStatus = "submitted" | "acknowledged" | "in_progress" | "resolved" | "closed";
+
+export type NeighborhoodReport = {
+  id: number;
+  reporter_id: number;
+  reporter_username: string;
+  reporter_first_name: string | null;
+  reporter_last_name: string | null;
+  category: ReportCategory;
+  description: string;
+  photo_url: string | null;
+  location_text: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  status: ReportStatus;
+  resolution_note: string | null;
+  resolved_at: string | null;
+  created_at: string;
+  updated_at: string;
+  follower_count: number;
+};
+
+const REPORT_SELECT = `
+  SELECT
+    r.id, r.reporter_id, r.category, r.description, r.photo_url, r.location_text,
+    r.latitude, r.longitude, r.status, r.resolution_note, r.resolved_at,
+    r.created_at, r.updated_at,
+    u.username AS reporter_username,
+    u.first_name AS reporter_first_name,
+    u.last_name AS reporter_last_name,
+    (SELECT COUNT(*) FROM neighborhood_report_followers f WHERE f.report_id = r.id) AS follower_count
+  FROM neighborhood_reports r
+  JOIN users u ON u.id = r.reporter_id
+`;
+
+export function createNeighborhoodReport(
+  reporterId: number,
+  input: {
+    category: ReportCategory;
+    description: string;
+    photoUrl?: string | null;
+    locationText?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  }
+): NeighborhoodReport {
+  const db = getDb();
+  const info = db
+    .prepare(
+      `INSERT INTO neighborhood_reports (reporter_id, category, description, photo_url, location_text, latitude, longitude)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      reporterId,
+      input.category,
+      input.description,
+      input.photoUrl ?? null,
+      input.locationText ?? null,
+      input.latitude ?? null,
+      input.longitude ?? null
+    );
+  // The reporter automatically tracks their own report.
+  const reportId = Number(info.lastInsertRowid);
+  db.prepare(
+    `INSERT INTO neighborhood_report_followers (report_id, user_id) VALUES (?, ?) ON CONFLICT DO NOTHING`
+  ).run(reportId, reporterId);
+  return db.prepare(`${REPORT_SELECT} WHERE r.id = ?`).get(reportId) as NeighborhoodReport;
+}
+
+export function getNeighborhoodReportById(id: number): NeighborhoodReport | undefined {
+  const db = getDb();
+  return db.prepare(`${REPORT_SELECT} WHERE r.id = ?`).get(id) as NeighborhoodReport | undefined;
+}
+
+export function listNeighborhoodReports(filters: {
+  status?: ReportStatus;
+  category?: ReportCategory;
+  reporterId?: number;
+  limit?: number;
+}): NeighborhoodReport[] {
+  const db = getDb();
+  const clauses: string[] = [];
+  const args: (string | number)[] = [];
+  if (filters.status) {
+    clauses.push("r.status = ?");
+    args.push(filters.status);
+  }
+  if (filters.category) {
+    clauses.push("r.category = ?");
+    args.push(filters.category);
+  }
+  if (filters.reporterId) {
+    clauses.push("r.reporter_id = ?");
+    args.push(filters.reporterId);
+  }
+  const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+  const limit = Math.min(filters.limit ?? 50, 100);
+  args.push(limit);
+  return db
+    .prepare(`${REPORT_SELECT} ${where} ORDER BY r.id DESC LIMIT ?`)
+    .all(...args) as NeighborhoodReport[];
+}
+
+export type NearbyReport = NeighborhoodReport & { distance_miles: number };
+
+// Same two-phase bounding-box-then-haversine pattern as
+// findNearbyUsers above — a cheap SQL range filter first, exact
+// distance second. Open reports only (not resolved/closed) — "what's
+// happening on my block right now" is the point.
+export function findNearbyNeighborhoodReports(
+  centerLat: number,
+  centerLng: number,
+  radiusMiles: number,
+  limit: number,
+  box: { minLat: number; maxLat: number; minLng: number; maxLng: number },
+  distanceFn: (lat1: number, lng1: number, lat2: number, lng2: number) => number
+): NearbyReport[] {
+  const db = getDb();
+  const candidates = db
+    .prepare(
+      `${REPORT_SELECT}
+       WHERE r.latitude IS NOT NULL AND r.longitude IS NOT NULL
+         AND r.status NOT IN ('resolved', 'closed')
+         AND r.latitude BETWEEN ? AND ?
+         AND r.longitude BETWEEN ? AND ?`
+    )
+    .all(box.minLat, box.maxLat, box.minLng, box.maxLng) as NeighborhoodReport[];
+
+  return candidates
+    .map((r) => ({ ...r, distance_miles: distanceFn(centerLat, centerLng, r.latitude as number, r.longitude as number) }))
+    .filter((r) => r.distance_miles <= radiusMiles)
+    .sort((a, b) => a.distance_miles - b.distance_miles)
+    .slice(0, limit);
+}
+
+// Status moves forward through a fixed lifecycle — never backward, so
+// a report can't accidentally bounce from "resolved" back to
+// "submitted" via a stale admin tab. Returns the updated report, or
+// null if the transition wasn't valid.
+const REPORT_STATUS_ORDER: ReportStatus[] = ["submitted", "acknowledged", "in_progress", "resolved", "closed"];
+
+export function updateNeighborhoodReportStatus(
+  reportId: number,
+  newStatus: ReportStatus,
+  resolvedBy: number,
+  resolutionNote: string | null
+): NeighborhoodReport | null {
+  const db = getDb();
+  const current = getNeighborhoodReportById(reportId);
+  if (!current) return null;
+  if (REPORT_STATUS_ORDER.indexOf(newStatus) <= REPORT_STATUS_ORDER.indexOf(current.status)) {
+    return null;
+  }
+  const isResolving = newStatus === "resolved" || newStatus === "closed";
+  db.prepare(
+    `UPDATE neighborhood_reports
+     SET status = ?, resolution_note = ?, updated_at = datetime('now'),
+         resolved_by = CASE WHEN ? THEN ? ELSE resolved_by END,
+         resolved_at = CASE WHEN ? THEN datetime('now') ELSE resolved_at END
+     WHERE id = ?`
+  ).run(newStatus, resolutionNote, isResolving ? 1 : 0, resolvedBy, isResolving ? 1 : 0, reportId);
+  return getNeighborhoodReportById(reportId) ?? null;
+}
+
+export function toggleReportFollow(reportId: number, userId: number): boolean {
+  const db = getDb();
+  const existing = db
+    .prepare(`SELECT id FROM neighborhood_report_followers WHERE report_id = ? AND user_id = ?`)
+    .get(reportId, userId);
+  if (existing) {
+    db.prepare(`DELETE FROM neighborhood_report_followers WHERE report_id = ? AND user_id = ?`).run(reportId, userId);
+    return false;
+  }
+  db.prepare(`INSERT INTO neighborhood_report_followers (report_id, user_id) VALUES (?, ?)`).run(reportId, userId);
+  return true;
+}
+
+export function isFollowingReport(reportId: number, userId: number): boolean {
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT id FROM neighborhood_report_followers WHERE report_id = ? AND user_id = ?`)
+    .get(reportId, userId);
+  return Boolean(row);
+}
+
+export function listReportFollowerEmails(reportId: number, excludeUserId?: number): string[] {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT u.email FROM neighborhood_report_followers f
+       JOIN users u ON u.id = f.user_id
+       WHERE f.report_id = ? AND u.id != ?`
+    )
+    .all(reportId, excludeUserId ?? -1) as { email: string }[];
+  return rows.map((r) => r.email);
 }
