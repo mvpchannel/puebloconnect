@@ -23,6 +23,7 @@ type PostCardProps = {
 
 type Comment = {
   id: number;
+  authorId: number;
   authorName: string;
   authorProfilePhotoPath: string | null;
   body: string;
@@ -94,8 +95,9 @@ export default function PostCard({
       .then((data) => {
         if (cancelled) return;
         setComments(
-          (data.comments || []).map((c: { id: number; authorName: string; authorProfilePhotoPath: string | null; body: string }) => ({
+          (data.comments || []).map((c: { id: number; authorId: number; authorName: string; authorProfilePhotoPath: string | null; body: string }) => ({
             id: c.id,
+            authorId: c.authorId,
             authorName: c.authorName,
             authorProfilePhotoPath: c.authorProfilePhotoPath,
             body: c.body,
@@ -166,6 +168,7 @@ export default function PostCard({
         ...prev,
         {
           id: data.comment.id,
+          authorId: data.comment.authorId,
           authorName: data.comment.authorName,
           authorProfilePhotoPath: data.comment.authorProfilePhotoPath,
           body: data.comment.body,
@@ -258,7 +261,7 @@ export default function PostCard({
                   <img src={c.authorProfilePhotoPath || "/images/resources/admin.jpg"} alt="" />
                 </div>
                 <div className="post-comt-box">
-                  <h5>{c.authorName}</h5>
+                  <h5><Link href={`/profile/${c.authorId}`} title="">{c.authorName}</Link></h5>
                   <p>{c.body}</p>
                 </div>
               </li>
