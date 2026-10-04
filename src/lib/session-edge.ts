@@ -18,6 +18,7 @@ export type SessionPayload = {
   username: string;
   role: "member" | "admin";
   exp: number;
+  pwv: number;
 };
 
 function b64urlToUint8Array(str: string): Uint8Array {

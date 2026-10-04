@@ -18,6 +18,19 @@ export type SessionPayload = {
   username: string;
   role: "member" | "admin";
   exp: number; // unix seconds
+  // Snapshot of the user's session_version (db.ts) at the moment this
+  // token was issued. Changing a password bumps that column; any route
+  // handler with DB access (requireUser, /api/auth/session) compares this
+  // value against the current one and rejects a stale token even though
+  // it's still cryptographically valid and unexpired — this is how
+  // "invalidate existing sessions after password change" works without a
+  // server-side session store. The Edge middleware (session-edge.ts) has
+  // no DB access and so cannot perform this check; it only verifies the
+  // signature and expiry. That's an accepted, documented limitation: a
+  // stolen-but-password-since-changed cookie could still pass the Edge
+  // gate into a page shell, but any real data request through a Node
+  // route handler (which is how this app fetches data) is rejected.
+  pwv: number;
 };
 
 const SESSION_COOKIE_NAME = "pueblo_session";
@@ -49,10 +62,13 @@ function b64urlToBuffer(str: string): Buffer {
   return Buffer.from(s, "base64");
 }
 
-export function signSession(payload: Omit<SessionPayload, "exp">): string {
+export function signSession(
+  payload: Omit<SessionPayload, "exp">,
+  ttlSeconds: number = SESSION_TTL_SECONDS
+): string {
   const full: SessionPayload = {
     ...payload,
-    exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
+    exp: Math.floor(Date.now() / 1000) + ttlSeconds,
   };
   const payloadB64 = b64url(Buffer.from(JSON.stringify(full), "utf8"));
   const sig = createHmac("sha256", getSecret()).update(payloadB64).digest();

@@ -10,9 +10,10 @@ import { useRouter, useSearchParams } from "next/navigation";
  *
  * STATUS: real. Both forms submit to actual API routes
  * (/api/auth/login, /api/auth/register) backed by a real SQLite users
- * table with hashed passwords and signed session cookies — see
- * src/lib/db.ts, src/lib/password.ts, src/lib/session.ts. No more
- * placeholder submit handlers.
+ * table with hashed passwords, signed session cookies, and a full
+ * email-verification / password-reset system — see src/lib/db.ts,
+ * src/lib/password.ts, src/lib/session.ts, src/lib/tokens.ts,
+ * src/lib/email.ts.
  */
 function LoginForm() {
   const router = useRouter();
@@ -23,14 +24,21 @@ function LoginForm() {
 
   const [loginUsername, setLoginUsername] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(true);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
 
-  const [regName, setRegName] = useState("");
+  const [regFirstName, setRegFirstName] = useState("");
+  const [regLastName, setRegLastName] = useState("");
   const [regUsername, setRegUsername] = useState("");
   const [regPassword, setRegPassword] = useState("");
+  const [regConfirmPassword, setRegConfirmPassword] = useState("");
   const [regEmail, setRegEmail] = useState("");
+  const [regCity, setRegCity] = useState("");
+  const [regAgree, setRegAgree] = useState(false);
+  const [regPhoto, setRegPhoto] = useState<string | null>(null);
   const [regError, setRegError] = useState<string | null>(null);
+  const [regNotice, setRegNotice] = useState<string | null>(null);
   const [regBusy, setRegBusy] = useState(false);
 
   async function handleLogin(e: FormEvent) {
@@ -41,7 +49,7 @@ function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
+        body: JSON.stringify({ username: loginUsername, password: loginPassword, rememberMe }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -57,18 +65,46 @@ function LoginForm() {
     }
   }
 
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setRegPhoto(null);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => setRegPhoto(typeof reader.result === "string" ? reader.result : null);
+    reader.readAsDataURL(file);
+  }
+
   async function handleRegister(e: FormEvent) {
     e.preventDefault();
     setRegError(null);
+    setRegNotice(null);
+
+    if (regPassword !== regConfirmPassword) {
+      setRegError("Passwords do not match.");
+      return;
+    }
+    if (!regAgree) {
+      setRegError("You must agree to the Terms of Service and Privacy Policy.");
+      return;
+    }
+
     setRegBusy(true);
     try {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          firstName: regFirstName,
+          lastName: regLastName,
           username: regUsername,
           email: regEmail,
           password: regPassword,
+          confirmPassword: regConfirmPassword,
+          city: regCity,
+          agreeToTerms: regAgree,
+          profilePhotoDataUrl: regPhoto,
         }),
       });
       const data = await res.json();
@@ -131,7 +167,7 @@ function LoginForm() {
                     onChange={(e) => setLoginUsername(e.target.value)}
                     autoComplete="username"
                   />
-                  <label className="control-label" htmlFor="login-username">Username</label>
+                  <label className="control-label" htmlFor="login-username">Username or Email</label>
                   <i className="mtrl-select" />
                 </div>
                 <div className="form-group">
@@ -148,13 +184,16 @@ function LoginForm() {
                 </div>
                 <div className="checkbox">
                   <label>
-                    <input type="checkbox" defaultChecked />
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                    />
                     <i className="check-box" />
                     Always remember me.
                   </label>
                 </div>
-                {/* STATUS: needs backend/API. Password-reset email flow doesn't exist yet. */}
-                <a href="#" title="" className="forgot-pwd">Forgot password?</a>
+                <a href="/forgot-password" title="" className="forgot-pwd">Forgot password?</a>
                 <div className="submit-btns">
                   <button className="mtr-btn signin" type="submit" disabled={loginBusy}>
                     <span>{loginBusy ? "Logging in…" : "Login"}</span>
@@ -179,10 +218,10 @@ function LoginForm() {
                   title=""
                   onClick={(e) => {
                     e.preventDefault();
-                    setShowRegister(true);
+                    setShowRegister(false);
                   }}
                 >
-                  Join now
+                  Already have an account
                 </a>
               </p>
               <form method="post" onSubmit={handleRegister}>
@@ -191,19 +230,33 @@ function LoginForm() {
                     {regError}
                   </p>
                 )}
+                {regNotice && (
+                  <p role="status" style={{ color: "#1f6feb", marginBottom: 12 }}>
+                    {regNotice}
+                  </p>
+                )}
                 <div className="form-group">
-                  {/* STATUS: collected but not yet stored — the users table
-                      doesn't have a display-name column yet (username only).
-                      Real, not fake: it's just not wired to this field yet. */}
                   <input
                     type="text"
-                    id="reg-name"
+                    id="reg-first-name"
                     required
-                    value={regName}
-                    onChange={(e) => setRegName(e.target.value)}
-                    autoComplete="name"
+                    value={regFirstName}
+                    onChange={(e) => setRegFirstName(e.target.value)}
+                    autoComplete="given-name"
                   />
-                  <label className="control-label" htmlFor="reg-name">First &amp; Last Name</label>
+                  <label className="control-label" htmlFor="reg-first-name">First Name</label>
+                  <i className="mtrl-select" />
+                </div>
+                <div className="form-group">
+                  <input
+                    type="text"
+                    id="reg-last-name"
+                    required
+                    value={regLastName}
+                    onChange={(e) => setRegLastName(e.target.value)}
+                    autoComplete="family-name"
+                  />
+                  <label className="control-label" htmlFor="reg-last-name">Last Name</label>
                   <i className="mtrl-select" />
                 </div>
                 <div className="form-group">
@@ -220,6 +273,18 @@ function LoginForm() {
                 </div>
                 <div className="form-group">
                   <input
+                    type="email"
+                    id="reg-email"
+                    required
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    autoComplete="email"
+                  />
+                  <label className="control-label" htmlFor="reg-email">Email</label>
+                  <i className="mtrl-select" />
+                </div>
+                <div className="form-group">
+                  <input
                     type="password"
                     id="reg-password"
                     required
@@ -231,53 +296,53 @@ function LoginForm() {
                   <label className="control-label" htmlFor="reg-password">Password (min. 8 characters)</label>
                   <i className="mtrl-select" />
                 </div>
-                <div className="form-radio">
-                  {/* STATUS: collected but not yet stored — same as display name above. */}
-                  <div className="radio">
-                    <label>
-                      <input type="radio" name="gender" defaultChecked />
-                      <i className="check-box" />
-                      Male
-                    </label>
-                  </div>
-                  <div className="radio">
-                    <label>
-                      <input type="radio" name="gender" />
-                      <i className="check-box" />
-                      Female
-                    </label>
-                  </div>
+                <div className="form-group">
+                  <input
+                    type="password"
+                    id="reg-confirm-password"
+                    required
+                    minLength={8}
+                    value={regConfirmPassword}
+                    onChange={(e) => setRegConfirmPassword(e.target.value)}
+                    autoComplete="new-password"
+                  />
+                  <label className="control-label" htmlFor="reg-confirm-password">Confirm Password</label>
+                  <i className="mtrl-select" />
                 </div>
                 <div className="form-group">
                   <input
-                    type="email"
-                    id="reg-email"
-                    required
-                    value={regEmail}
-                    onChange={(e) => setRegEmail(e.target.value)}
-                    autoComplete="email"
+                    type="text"
+                    id="reg-city"
+                    value={regCity}
+                    onChange={(e) => setRegCity(e.target.value)}
+                    autoComplete="address-level2"
                   />
-                  <label className="control-label" htmlFor="reg-email">Email</label>
+                  <label className="control-label" htmlFor="reg-city">City / Neighborhood (optional)</label>
                   <i className="mtrl-select" />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="reg-photo" style={{ display: "block", marginBottom: 6 }}>
+                    Profile photo (optional)
+                  </label>
+                  <input
+                    type="file"
+                    id="reg-photo"
+                    accept="image/png,image/jpeg,image/webp"
+                    onChange={handlePhotoChange}
+                  />
                 </div>
                 <div className="checkbox">
                   <label>
-                    <input type="checkbox" required />
+                    <input
+                      type="checkbox"
+                      required
+                      checked={regAgree}
+                      onChange={(e) => setRegAgree(e.target.checked)}
+                    />
                     <i className="check-box" />
                     Accept <a href="/terms" target="_blank" rel="noreferrer">Terms &amp; Conditions</a>?
                   </label>
                 </div>
-                <a
-                  href="#"
-                  title=""
-                  className="already-have"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setShowRegister(false);
-                  }}
-                >
-                  Already have an account
-                </a>
                 <div className="submit-btns">
                   <button className="mtr-btn signup" type="submit" disabled={regBusy}>
                     <span>{regBusy ? "Creating account…" : "Register"}</span>

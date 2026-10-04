@@ -12,16 +12,23 @@ blocked (both the public npm registry and an internal mirror returned
 means:
 
 - Every `.ts`/`.tsx` file **was** syntax-checked (confirms valid
-  TypeScript/JSX, no unclosed tags or structural mistakes) — 73/73 files
+  TypeScript/JSX, no unclosed tags or structural mistakes) — 87/87 files
   passed.
 - It has **not** been through an actual `next build`, so TypeScript type
   errors against the real `next`/`react` type definitions, any remaining
   import mistakes, or runtime issues can't be ruled out yet.
-- **Exception: the auth/session/database logic and the Stripe payment
-  logic were actually run**, not just syntax-checked — see "Auth system"
-  and "Business membership payments" below. Both need no `npm install`
-  because they're built entirely on Node's own built-ins plus plain
-  `fetch` calls to Stripe's REST API (no `stripe` npm package).
+- **Exception: the auth/session/database/membership/email logic and the
+  Stripe payment logic were actually run**, not just syntax-checked — see
+  "Auth system" and "Business membership payments" below. All of it needs
+  no `npm install` because it's built entirely on Node's own built-ins
+  plus plain `fetch` calls (Stripe's and Resend's REST APIs — no SDK
+  packages). The full registration → verify-email → login → forgot-
+  password → reset-password chain, plus duplicate email/username, wrong
+  password, expired/reused/invalid tokens, and rate limiting, was
+  exercised against a real (temporary, isolated) SQLite database by
+  importing the actual source files with Node's `--experimental-strip-
+  types` — 41/41 checks passed. See the project's final report for the
+  full list.
 
 **First thing to do on a machine with working npm access:**
 
@@ -39,45 +46,92 @@ as already verified (below).
 
 ## Auth system (real, not a mockup)
 
-Member registration, login, logout, and sessions are fully implemented and
-backed by a real database — not placeholder forms. Built with **zero new
-npm dependencies**: it uses only Node.js built-ins (`node:sqlite`,
-`node:crypto`, Web Crypto), which is why it could be genuinely tested in
-this sandbox despite the npm block.
+Member registration, email verification, login, logout, forgot/reset
+password, and sessions are fully implemented and backed by a real
+database — not placeholder forms. Built with **zero new npm
+dependencies**: it uses only Node.js built-ins (`node:sqlite`,
+`node:crypto`, Web Crypto, `fetch`), which is why it could be genuinely
+tested in this sandbox despite the npm block.
 
 - **Database**: `src/lib/db.ts` — SQLite via Node's built-in `node:sqlite`
-  (stable in Node ≥22.5, no native compilation, no server to run). One
-  `users` table: id, username, email, password_hash, role
-  (`member`/`admin`), created_at.
+  (stable in Node ≥22.5, no native compilation, no server to run). A
+  `users` table (id, username, email, password_hash, role, created_at,
+  **first_name, last_name, city, profile_photo_path, email_verified_at,
+  account_status, updated_at, last_login_at, session_version,
+  marketing_emails_opt_in**), plus purpose-specific
+  `email_verification_tokens` and `password_reset_tokens` tables (each
+  storing only a SHA-256 **hash** of its token, with its own
+  expiry/used/revoked lifecycle — never a reusable plain token on the
+  user row), and a `rate_limit_attempts` table. The newer columns were
+  added with additive `ALTER TABLE ... ADD COLUMN` migrations
+  (`runUserMigrations`) that run automatically and leave every existing
+  row's data untouched — verified by hand against a hand-built
+  old-schema database file.
 - **Passwords**: `src/lib/password.ts` — scrypt with a random salt per
   user, timing-safe comparison. Verified by hand: correct password
   accepted, wrong password rejected.
+- **Tokens**: `src/lib/tokens.ts` — 256-bit random tokens for email
+  verification (24h expiry) and password reset (1h expiry); only the
+  SHA-256 hash is ever persisted.
+- **Email**: `src/lib/email.ts` — one reusable module for every
+  transactional email (verification, email-verified, password-reset,
+  password-changed), sent via Resend's plain HTTP API (`fetch`, no SDK)
+  when `RESEND_API_KEY` is set. **With no key set, email is written to
+  `data/outbox/*.json` instead of silently doing nothing** — this is how
+  the full flow was tested end-to-end in this sandbox (api.resend.com is
+  outside this sandbox's network allowlist, confirmed by hand — a real
+  `fetch()` to it returns "403 Host not in allowlist").
+- **Rate limiting**: `src/lib/rate-limit.ts` — persisted (SQLite-backed,
+  not in-memory) sliding-window limits on register/login/forgot-password/
+  reset-password/resend-verification, keyed by IP and, for login, also by
+  the account being attempted.
 - **Sessions**: `src/lib/session.ts` signs a small HMAC-SHA256 token
-  (same idea as a JWT) into an httpOnly cookie. `src/lib/session-edge.ts`
-  verifies it inside `src/middleware.ts`, which runs on the Edge runtime
-  and can't use Node's `crypto` module — it uses the standard Web Crypto
-  API instead. **Verified by hand**: a token signed with Node's
-  `createHmac` round-trips correctly through `crypto.subtle.verify`,
-  and a wrong secret or a tampered payload is correctly rejected.
+  (same idea as a JWT) into an httpOnly cookie, now also carrying a
+  `pwv` (password/session version) snapshot. `src/lib/session-edge.ts`
+  verifies the signature inside `src/middleware.ts` (Edge runtime, no
+  Node `crypto`/DB access — uses Web Crypto instead); `src/lib/
+  require-user.ts` and `GET /api/auth/session` do the fuller,
+  DB-backed check that also rejects a token whose `pwv` no longer
+  matches the user's current `session_version` — i.e. a password change
+  invalidates every session issued before it, even though sessions are
+  stateless signed cookies with no server-side session store.
 - **Routes**: `POST /api/auth/register`, `POST /api/auth/login`,
-  `POST /api/auth/logout`, `GET /api/auth/session`.
+  `POST /api/auth/logout`, `GET /api/auth/session`,
+  `GET /api/auth/verify-email?token=`, `POST /api/auth/resend-verification`,
+  `POST /api/auth/forgot-password`, `POST /api/auth/reset-password`,
+  `GET/POST /api/account/notification-preferences`.
+- **Pages**: `/login` (sign in + register, now collecting first/last
+  name, confirm password, city, optional profile photo, and a required
+  ToS checkbox), `/verify-email`, `/forgot-password`, `/reset-password`.
 - **Protected pages**: `src/middleware.ts` redirects to `/login` if you're
-  not signed in and try to visit `/newsfeed`, `/profile`, or `/admin`; it
-  additionally requires `role: admin` for `/admin` (a logged-in member gets
-  bounced to `/newsfeed`, not shown that `/admin` exists).
+  not signed in and try to visit `/newsfeed`, `/profile`, `/explore-3d`,
+  `/notifications`, `/messages`, or `/admin`; it additionally requires
+  `role: admin` for `/admin`. `/verify-email`, `/forgot-password`, and
+  `/reset-password` are intentionally public — a brand-new or logged-out
+  member has to be able to reach them from an email link.
 - **Admins aren't created through the signup form, ever** — registering
   always creates a `member`. The only way to create an admin is running
   `npm run create-admin -- <username> <email> <password>` (or
   `node scripts/create-admin.mjs ...`) on the server, by someone with shell
-  access. This was run and verified in this sandbox — it creates a real row
-  in the SQLite file with a correctly hashed password.
-- **What's still a placeholder**: the registration form's "First & Last
-  Name" and gender fields are collected in the UI but there's no column
-  for them yet in the `users` table — marked with a `STATUS:` comment in
-  `LoginForm.tsx` rather than silently dropped. Password reset
-  ("Forgot password?") isn't built — it would need an email-sending
-  service, which is a credentialed third-party integration, not something
-  to fake.
+  access.
+- **Security notes**: no SQL string concatenation anywhere (every query
+  in `db.ts` is parameterized); React escapes all rendered output (no XSS
+  vector from user input); the auth API only accepts
+  `Content-Type: application/json` over `fetch` with no permissive CORS
+  headers, which combined with the session cookie's `SameSite=Lax` rules
+  out the standard CSRF vectors without a separate synchronizer-token
+  scheme; login and forgot-password return the same generic
+  message/response whether or not the account exists, so neither leaks
+  which emails/usernames are registered.
+- **What's still a placeholder**: "edit profile" and "account settings"
+  in the header dropdown (there's no profile-edit or settings *page* yet
+  — out of scope for this pass, which was specifically the membership/
+  login/password-recovery/email system); real email delivery (needs a
+  `RESEND_API_KEY` and a verified sending domain — see
+  `ENVIRONMENT VARIABLES` below); profile-photo storage is real but is a
+  local-filesystem store (`public/uploads/avatars/`), which is fine for
+  a single-server deployment but would move to object storage (e.g. an
+  S3-compatible bucket) at larger scale.
 
 ## Admin panel — all 16 pages ported and role-gated
 

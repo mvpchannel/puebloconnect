@@ -4,8 +4,9 @@ import { getUserById } from "@/lib/db";
 
 // GET /api/auth/session — used by client components to ask "who am I?"
 // Re-reads the user from the DB (not just the cookie payload) so a role
-// change or account deletion takes effect without waiting for the cookie
-// to expire.
+// change, account deletion, or password change (which bumps
+// session_version — see session.ts) takes effect immediately instead of
+// waiting for the cookie to expire.
 export async function GET(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE_NAME)?.value;
   if (!token) return NextResponse.json({ user: null });
@@ -15,6 +16,9 @@ export async function GET(req: NextRequest) {
 
   const user = getUserById(payload.sub);
   if (!user) return NextResponse.json({ user: null });
+  if (user.session_version !== payload.pwv) return NextResponse.json({ user: null });
+  if (user.account_status !== "active") return NextResponse.json({ user: null });
 
+  // getUserById already excludes password_hash.
   return NextResponse.json({ user });
 }
