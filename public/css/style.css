@@ -801,11 +801,25 @@ header.sticky {
 
 .feature-photo > figure {
     margin-bottom: 0;
+    /* FORMATTING FIX: this had no height of its own — it just grew to
+       whatever height the uploaded cover photo's own aspect ratio
+       produced at full width. A portrait or very tall upload made this
+       banner balloon in height, which (since .user-avatar below is
+       positioned with a fixed negative margin expecting a normal banner
+       height) shoved the avatar/name/follow-button area out of position.
+       A fixed aspect ratio keeps the banner box a predictable, consistent
+       shape — matching the site's own cover photo (1366x350, ~3.9:1) —
+       no matter what size photo is uploaded. overflow:hidden clips the
+       photo to that box instead of letting it push the box taller. */
+    aspect-ratio: 3.9 / 1;
+    overflow: hidden;
 }
 
 .feature-photo > figure img {
-    display: inline-block;
+    display: block;
     width: 100%;
+    height: 100%;
+    object-fit: cover;
 }
 
 .user-avatar {
@@ -817,10 +831,23 @@ header.sticky {
     overflow: hidden;
     position: relative;
     width: auto;
+    /* FORMATTING FIX: width:auto has no media-query override above this
+       theme's largest breakpoint, so on a wide desktop window a
+       high-resolution uploaded photo could size this avatar up to nearly
+       the full width of its grid column instead of a normal avatar size.
+       This fixed width is the default/large-desktop size only — every
+       width override already set per breakpoint in responsive.css is
+       untouched and still applies on smaller screens. aspect-ratio keeps
+       it a true square (so border-radius:100% is always a circle, not an
+       oval) at whatever width is active at any breakpoint. */
+    width: 160px;
+    aspect-ratio: 1 / 1;
 }
 
 .user-avatar > figure > img {
     width: 100%;
+    height: 100%;
+    object-fit: cover;
 	border-radius: 100%;
 }
 
@@ -1433,8 +1460,21 @@ form button {
 }
 
 .post-meta > img {
+    /* FORMATTING FIX: width:100% with no height limit meant a tall/
+       portrait-oriented uploaded photo displayed at full card width would
+       render extremely tall, ballooning that one post's card height and
+       pushing every post below it far down the page. Capping max-height
+       (while leaving width/height on "auto") lets the browser pick
+       whichever dimension is the real constraint — wide photos still fill
+       the card width as before, but a tall photo is scaled down to fit
+       the height cap instead, and its full content stays visible (no
+       cropping) since this isn't a fixed-size slot like an avatar. */
     float: left;
-    width: 100%;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: 520px;
+    display: block;
 }
 
 .description {
@@ -4720,6 +4760,20 @@ canvas {
 
 /*--- 100% radius images ---*/
 
+/* FORMATTING FIX: these selectors circle the IMG using whatever width is
+   already set per class/breakpoint elsewhere (several on the figure
+   parent, not the img), but never constrained the img's own box to match
+   — so a non-square uploaded photo stretched into an oval instead of a
+   circle, a photo smaller than its slot didn't fill it, and a large/
+   high-res photo could push its box far taller than its width. width:100%
+   fills whatever box the parent already defines; aspect-ratio:1/1 forces
+   that box to be a true square; object-fit:cover then crops the photo to
+   fill it without distorting it. No widths were changed here — every
+   existing breakpoint rule for these classes still applies unchanged.
+   This fixes every "circular avatar" slot at once: post authors, the
+   composer avatar, comment/reply avatars, friend/follower lists, group
+   and "nearby people" thumbnails, business page icons ("your-page"),
+   conversation heads and the messages list, and notifications. */
 #people-list figure img,
 .new-postbox > figure img,
 .friend-info > figure img,
@@ -4731,8 +4785,22 @@ canvas {
 .conversation-head > figure img,
 .peoples-mesg-box > ul li > figure img,
 .your-page > figure img,
-.notification-box > ul li figure img {
+.notification-box > ul li figure img,
+.drops-menu > li a img,
+.chat-thumb > img {
     border-radius: 100%;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* .chat-thumb itself only had a fixed width (no height), so the
+   aspect-ratio on its img above had nothing to size against — give the
+   wrapper the matching square box directly. */
+.chat-thumb {
+    aspect-ratio: 1 / 1;
 }
 
 

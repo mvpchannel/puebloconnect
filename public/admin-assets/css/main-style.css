@@ -484,6 +484,13 @@ header.side-header.light-skin {background: #ffffff none repeat scroll 0 0;}
 .admin-details > span > img {
     float: left;
     width: 59px;
+    /* FORMATTING FIX: width was fixed (good) but height wasn't, so a
+       non-square admin photo rendered as an oval instead of a circle
+       (border-radius:50% is applied to this selector elsewhere in this
+       file). This is the real logged-in admin's avatar in the Next.js
+       app's sidebar (AdminChrome.tsx), not just template demo content. */
+    height: 59px;
+    object-fit: cover;
 }
 .admin-details h3 {
     color: #000;
@@ -730,6 +737,11 @@ header.side-header.light-skin {background: #ffffff none repeat scroll 0 0;}
     float: left;
     margin-top: 10px;
     width: 100%;
+    /* FORMATTING FIX: width was capped (good) but height wasn't, so a
+       non-square admin photo rendered as an oval instead of a circle. */
+    aspect-ratio: 1 / 1;
+    height: 100%;
+    object-fit: cover;
 	box-shadow: 0px 10px 20px rgba(0,0,0,.15);
 }
 .user-thumb > h3 {
@@ -1533,6 +1545,11 @@ form.filterform {
 .comment-thumb {
     float: left;
     margin-right: 15px;
+    /* FORMATTING FIX: no size constraint at all previously — a real photo
+       would render at full native resolution in the comments list. */
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
 }
 .comment-detail {display: table;}
 .comment-detail > h2 {
@@ -2441,6 +2458,14 @@ footer li{float: left;}
     float: left;
     margin-right: 23px;
 	border-radius: 100%;
+    /* FORMATTING FIX: this had no size constraint of any kind — a real
+       (non-thumbnail) photo would render at its full native resolution,
+       blowing out the review row's layout. 50px matches this theme's
+       other list-row avatars (e.g. .notification-box in the member-site
+       CSS uses 45px for the same kind of slot). */
+    width: 50px;
+    height: 50px;
+    object-fit: cover;
 }
 .rev-inf {
     display: table;
@@ -3445,6 +3470,11 @@ footer li{float: left;}
     float: left;
     margin-right: 25px;
 	border-radius: 100%;
+    /* FORMATTING FIX: no size constraint at all previously — a real
+       photo would render at full native resolution here. */
+    width: 45px;
+    height: 45px;
+    object-fit: cover;
 }
 .sndr-tckt {display: table;}
 .sndr-tckt h2 {
@@ -3961,6 +3991,11 @@ footer li{float: left;}
 }
 .chat-message .sndr-nm img{
 	border-radius: 100%;
+    /* FORMATTING FIX: no size constraint at all previously — a real photo
+       would render at full native resolution inside the chat bubble. */
+    width: 32px;
+    height: 32px;
+    object-fit: cover;
 }
 .cht-bdy > ul > li.me {
     padding-left: 0;
@@ -4860,6 +4895,10 @@ footer li{float: left;}
 .gpl-sndr-info > img {
     float: left;
     margin-right: 10px;
+    /* FORMATTING FIX: no size constraint at all previously. */
+    width: 40px;
+    height: 40px;
+    object-fit: cover;
 }
 .gpl-sndr-nm > h5 {
     color: #333;
