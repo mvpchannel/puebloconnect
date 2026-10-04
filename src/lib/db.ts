@@ -106,3 +106,21 @@ export function countUsers(): number {
   const row = db.prepare("SELECT COUNT(*) as n FROM users").get() as { n: number };
   return row.n;
 }
+
+export function countAdmins(): number {
+  const db = getDb();
+  const row = db
+    .prepare("SELECT COUNT(*) as n FROM users WHERE role = 'admin'")
+    .get() as { n: number };
+  return row.n;
+}
+
+export function updateUserRole(id: number, role: "member" | "admin"): void {
+  const db = getDb();
+  db.prepare("UPDATE users SET role = ? WHERE id = ?").run(role, id);
+}
+
+export function deleteUser(id: number): void {
+  const db = getDb();
+  db.prepare("DELETE FROM users WHERE id = ?").run(id);
+}

@@ -12,7 +12,7 @@ blocked (both the public npm registry and an internal mirror returned
 means:
 
 - Every `.ts`/`.tsx` file **was** syntax-checked with esbuild (confirms
-  valid TypeScript/JSX, no unclosed tags or structural mistakes) — 25/25
+  valid TypeScript/JSX, no unclosed tags or structural mistakes) — 45/45
   files passed.
 - It has **not** been through an actual `next build`, so TypeScript type
   errors against the real `next`/`react` type definitions, any remaining
@@ -77,17 +77,59 @@ this sandbox despite the npm block.
   service, which is a credentialed third-party integration, not something
   to fake.
 
-### `/admin` — one real example, not the whole panel
+## Admin panel — all 16 pages ported and role-gated
 
-`src/app/admin/page.tsx` is a genuinely protected page (only reachable with
-a `role: admin` session) that lists real users from the database. It is
-**not** the full admin panel — the other 15 screens (tickets, reviews,
-location management, calendar, etc.) still live as static HTML with zero
-access control in `../pueblo-connect/winku admin/`. Porting each one here,
-the same way `/admin` was done, is how they'd get real protection; until
-then, the static site's `.htaccess.example`/`robots.txt`/`noindex` additions
-are the only (partial) mitigation for those pages — see
-`FUNCTIONALITY_STATUS.md` in the Phase 0 site.
+Every page from `../pueblo-connect/winku admin/` (16 HTML files) now has a
+real, protected equivalent under `/admin/*` in this app. All of it sits
+behind `src/middleware.ts` (`role: admin` required, matcher
+`/admin/:path*`) — unlike the static version, there is no URL anyone can
+just load.
+
+**Real, not a mockup (2 of 16):**
+
+- **`/admin`** (dashboard) — real counts (total users, members, admins) and
+  a real "recently joined" table, read live from the SQLite database via
+  `src/lib/db.ts`. The vendor template's fake activity feed (hardcoded
+  "Stephen N. Arellano", fake comments) was dropped rather than ported —
+  it wasn't a real feature, just theme-preview filler.
+- **`/admin/users`** (user management) — real CRUD: lists actual users,
+  and "Make admin" / "Remove admin" / "Delete" genuinely call
+  `PATCH`/`DELETE /api/admin/users/:id`, which re-checks the admin session
+  itself (`src/lib/require-admin.ts`) rather than trusting the page-level
+  gate alone — API routes live outside `src/middleware.ts`'s `/admin/*`
+  page matcher, so that route would otherwise be unprotected. Safeguards:
+  an admin can't demote or delete their own account, and the last
+  remaining admin can't be demoted or deleted (no way to lock everyone
+  out).
+
+**Visually ported, still the vendor demo content (14 of 16):** `/admin/connect`,
+`/admin/edit-profile`, `/admin/inbox`, `/admin/calendar`,
+`/admin/image-cropper`, `/admin/link-posting`, `/admin/notifications`,
+`/admin/image-opener`, `/admin/tickets-1`, `/admin/tickets-2`,
+`/admin/reviews`, `/admin/locations`, `/admin/posting-panel`,
+`/admin/post-preview`. These are real, protected Next.js pages — not
+static HTML anyone can load — but their *content* is still the original
+template's sample data (fake tickets, fake reviews, a fake calendar, etc.),
+converted from HTML to JSX mechanically (class→className, inline
+`style="…"` strings→objects, void tags self-closed) and verified with
+esbuild, same process as the member-site pages. Each has its own
+`STATUS:` comment. Giving any of these real functionality (an actual
+support-ticket system, real reviews tied to real businesses, a real
+calendar backed by the events feature from the brief, etc.) is separate
+work — a real data model and API per feature — not just more porting.
+
+**Shared admin chrome**: `src/components/admin/AdminChrome.tsx` (top bar +
+collapsible sidebar) replaces the markup duplicated across all 16 original
+files. It shows the real logged-in admin's username/role (from
+`/api/auth/session`) and a working log-out button; the old top-bar's
+fullscreen/refresh icons and the sidebar's `body.menu-active` CSS hook
+are cosmetic-only carryovers from the vendor theme (noted in the
+component). Admin pages load their own CSS stack
+(`public/admin-assets/`) via `src/app/admin/layout.tsx`, kept separate
+from the member site's CSS (`src/app/(site)/layout.tsx`) so the two
+different Bootstrap builds don't collide — this required splitting the
+former single root layout into a minimal root plus two section layouts;
+see the comments in `src/app/layout.tsx` for why.
 
 ## What's ported so far
 
@@ -96,15 +138,15 @@ are the only (partial) mitigation for those pages — see
 | `/login` | `landing.html` | Login and Register forms are real — they call the auth API above, not placeholders. |
 | `/newsfeed` | `newsfeed.html` | Requires login (middleware-protected). Composer + feed with sample posts. Like button is real local state (not persisted). Comments post locally only. |
 | `/profile` | `time-line.html` | Requires login. Cover photo/avatar/tabs header, reuses the newsfeed composer/post components. |
-| `/admin` | — (new) | Requires login **and** `role: admin`. Real page, lists real users from the database. See above. |
+| `/admin/*` (16 routes) | `winku admin/*.html` | Requires login **and** `role: admin`. All 16 pages ported — 2 real (dashboard, user management), 14 visual-only. See "Admin panel" above. |
 | `/terms` | `terms.html` (Phase 0) | Same placeholder draft content — still needs a lawyer's review before launch. |
 | `/sitemap-page` | `sitemap.html` (Phase 0) | Human-readable page listing routes. (Note: `/sitemap.xml` is a *separate*, real machine-readable sitemap generated by `src/app/sitemap.ts` — a genuine Next.js SEO feature the static site couldn't offer.) |
 | `/` | — | Redirects to `/login`. |
 
 Everything else — groups, messages, notifications, the business directory,
-shop, forum, and 15 of the 16 `winku admin/` panel pages — is **still only
-in the Phase 0 static HTML site** (`../pueblo-connect/winku-html/`), with no
-auth protection at all since that site has no server to check a session
+shop, forum, etc. — is **still only in the Phase 0 static HTML site**
+(`../pueblo-connect/winku-html/`), with no auth protection at all since that
+site has no server to check a session
 against. Port the rest page by page using the pattern below; any page that
 should require login or admin can reuse `src/middleware.ts` by just adding
 its path to `MEMBER_ROUTES`/`ADMIN_ROUTES`.

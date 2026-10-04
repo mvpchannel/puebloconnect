@@ -1,13 +1,15 @@
 import type { Metadata } from "next";
 
 /**
- * Root layout. Loads the legacy template's global stylesheets in the same
- * order every winku-html page used to load them individually
- * (main.min.css -> style.css -> color.css -> responsive.css). These are
- * plain global CSS, not CSS Modules, by design — the whole visual system
- * (grid, components, icon fonts) lives in them, and rewriting it in
- * CSS-in-JS/Tailwind is an explicit non-goal of Phase 1 ("upgrade the
- * technology underneath it, not redesign it").
+ * Root layout — deliberately minimal. This app has two visually separate
+ * sections that each ship their own full CSS stack (the member site's
+ * winku-html assets vs. the admin panel's own Bootstrap/icon/theme CSS),
+ * so the actual <head> stylesheets and body wrapper markup live in each
+ * section's own nested layout instead of here:
+ *   - src/app/(site)/layout.tsx   — member-facing pages
+ *   - src/app/admin/layout.tsx    — admin panel pages
+ * Loading both CSS stacks globally here would mean two different Bootstrap
+ * builds fighting over the same class names site-wide.
  */
 export const metadata: Metadata = {
   title: {
@@ -28,18 +30,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <head>
-        <link rel="stylesheet" href="/css/main.min.css" />
-        <link rel="stylesheet" href="/css/style.css" />
-        <link rel="stylesheet" href="/css/color.css" />
-        <link rel="stylesheet" href="/css/responsive.css" />
-      </head>
-      <body>
-        <div className="theme-layout">
-          <div className="postoverlay" />
-          {children}
-        </div>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }

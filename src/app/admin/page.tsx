@@ -2,63 +2,91 @@ import type { Metadata } from "next";
 import { listUsers, countUsers } from "@/lib/db";
 
 export const metadata: Metadata = {
-  title: "Admin",
+  title: "Dashboard",
 };
 
-// Real, working, role-gated admin page — reachable only if middleware.ts
+// Real, working, role-gated dashboard — reachable only if middleware.ts
 // confirmed a valid session with role === 'admin' (see src/middleware.ts).
-// This replaces the old winku admin/ static HTML panel's complete lack of
-// access control for at least this one page; the rest of that panel still
-// needs to be ported here page by page to get the same real protection
-// (see FUNCTIONALITY_STATUS.md).
-export default function AdminPage() {
-  const users = listUsers();
+// Ported from winku admin/index.html's overall page structure (top-bar +
+// sidebar now live in AdminChrome via admin/layout.tsx); the vendor
+// template's decorative content below the fold (a fake "profile banner"
+// editor, fake activity feed with a hardcoded "Stephen N. Arellano") was
+// not carried over — it wasn't a real feature, just demo filler for a
+// theme preview. Replaced with a real summary of what the data layer
+// actually has today.
+export default function AdminDashboardPage() {
   const total = countUsers();
+  const users = listUsers();
+  const admins = users.filter((u) => u.role === "admin").length;
+  const members = total - admins;
+  const recent = users.slice(0, 5);
 
   return (
-    <div style={{ maxWidth: 900, margin: "40px auto", padding: "0 20px", fontFamily: "sans-serif" }}>
-      <h1>Pueblo Connect — Admin</h1>
-      <p>
-        You&rsquo;re seeing this page because your session has <code>role: admin</code>.
-        Anyone without that role is redirected to <code>/newsfeed</code> before this
-        page ever renders — enforced in <code>src/middleware.ts</code>, not just hidden
-        in the UI.
-      </p>
+    <div className="row">
+      <div className="col-md-12">
+        <h2 style={{ marginBottom: 20 }}>Dashboard</h2>
 
-      <h2>Users ({total})</h2>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-            <th style={{ padding: "8px 4px" }}>ID</th>
-            <th style={{ padding: "8px 4px" }}>Username</th>
-            <th style={{ padding: "8px 4px" }}>Email</th>
-            <th style={{ padding: "8px 4px" }}>Role</th>
-            <th style={{ padding: "8px 4px" }}>Joined</th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map((u) => (
-            <tr key={u.id} style={{ borderBottom: "1px solid #eee" }}>
-              <td style={{ padding: "8px 4px" }}>{u.id}</td>
-              <td style={{ padding: "8px 4px" }}>{u.username}</td>
-              <td style={{ padding: "8px 4px" }}>{u.email}</td>
-              <td style={{ padding: "8px 4px" }}>{u.role}</td>
-              <td style={{ padding: "8px 4px" }}>{u.created_at}</td>
+        <div className="row" style={{ marginBottom: 30 }}>
+          <div className="col-md-4">
+            <div className="widget-box" style={cardStyle}>
+              <h3 style={{ margin: 0, fontSize: 32 }}>{total}</h3>
+              <p style={{ margin: 0, color: "#888" }}>Total users</p>
+            </div>
+          </div>
+          <div className="col-md-4">
+            <div className="widget-box" style={cardStyle}>
+              <h3 style={{ margin: 0, fontSize: 32 }}>{members}</h3>
+              <p style={{ margin: 0, color: "#888" }}>Members</p>
+            </div>
+          </div>
+          <div className="col-md-4">
+            <div className="widget-box" style={cardStyle}>
+              <h3 style={{ margin: 0, fontSize: 32 }}>{admins}</h3>
+              <p style={{ margin: 0, color: "#888" }}>Admins</p>
+            </div>
+          </div>
+        </div>
+
+        <h4>Recently joined</h4>
+        <table className="table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Email</th>
+              <th>Role</th>
+              <th>Joined</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {recent.map((u) => (
+              <tr key={u.id}>
+                <td>{u.username}</td>
+                <td>{u.email}</td>
+                <td>{u.role}</td>
+                <td>{u.created_at}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {recent.length === 0 && <p>No users yet.</p>}
 
-      {users.length === 0 && <p>No users yet.</p>}
-
-      <p style={{ marginTop: 32, color: "#666", fontSize: 14 }}>
-        STATUS: this page only reads and lists real users from the database —
-        it&rsquo;s a real, working example of an authenticated admin page, not a
-        full admin panel. The other admin screens (tickets, reviews, location
-        management, etc.) still live as static HTML in{" "}
-        <code>../pueblo-connect/winku admin/</code> and need to be ported here,
-        one page at a time, to get this same real protection.
-      </p>
+        <p style={{ marginTop: 32, color: "#888", fontSize: 13 }}>
+          STATUS: the numbers and table above are real, read live from the
+          database — not sample data. Everything else in this admin panel
+          (tickets, reviews, calendar, location management, etc.) is still
+          the ported vendor demo UI with no real data behind it yet; see{" "}
+          <code>FUNCTIONALITY_STATUS.md</code> for the page-by-page
+          breakdown.
+        </p>
+      </div>
     </div>
   );
 }
+
+const cardStyle: React.CSSProperties = {
+  background: "#fff",
+  border: "1px solid #eee",
+  borderRadius: 6,
+  padding: "20px",
+  textAlign: "center",
+};
