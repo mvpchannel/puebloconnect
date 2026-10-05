@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import DeleteAccountForm from "@/components/DeleteAccountForm";
 import Link from "next/link";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -92,6 +93,12 @@ export default async function AccountSettingsPage() {
                         <NotificationPreferencesForm
                           initialOptIn={Boolean(user.marketing_emails_opt_in)}
                         />
+                      </div>
+                    </div>
+                    <div className="central-meta" id="delete-account" style={{ marginTop: 20 }}>
+                      <div className="editing-interest">
+                        <h5 className="f-title"><i className="ti-trash" /> Delete Account</h5>
+                        <DeleteAccountForm />
                       </div>
                     </div>
                   </>

@@ -1256,7 +1256,7 @@ function getDb(): DatabaseSync {
   return global.__pueblo_db__;
 }
 
-export type AccountStatus = "active" | "suspended";
+export type AccountStatus = "active" | "suspended" | "deleted";
 
 export type User = {
   id: number;
@@ -6513,4 +6513,131 @@ export function setEventCover(eventId: number, path: string | null): void {
 
 export function setGroupCover(groupId: number, path: string | null): void {
   getDb().prepare("UPDATE groups SET cover_photo_path = ? WHERE id = ?").run(path, groupId);
+}
+
+// ---------------------------------------------------------------------------
+// Account deletion (self-service). The users row is kept but scrubbed
+// ("anonymised") rather than removed: ~60 tables point at users(id) and
+// foreign keys aren't enforced, so a hard delete would leave dangling ids
+// that break joins. Everything personal is erased: profile, contact and
+// location data, credentials, posts, comments, messages, friendships,
+// likes, RSVPs, stories, classifieds, reviews, reactions, notifications
+// and uploaded-image references. Rows that have to stay for accounting
+// (payment_transactions) keep only the anonymous id. Events, groups and
+// streams the member created remain, credited to "Deleted member".
+// ---------------------------------------------------------------------------
+export type DeleteAccountResult =
+  | { ok: true; files: string[] }
+  | { ok: false; reason: "admin" | "owns_business" | "not_found" };
+
+export function deleteUserAccount(userId: number): DeleteAccountResult {
+  const db = getDb();
+  const user = db.prepare("SELECT id, role, account_status FROM users WHERE id = ?").get(userId) as
+    | { id: number; role: string; account_status: string }
+    | undefined;
+  if (!user || user.account_status === "deleted") return { ok: false, reason: "not_found" };
+  if (user.role === "admin") return { ok: false, reason: "admin" };
+  if (db.prepare("SELECT 1 AS x FROM businesses WHERE owner_id = ? LIMIT 1").get(userId)) {
+    return { ok: false, reason: "owns_business" };
+  }
+
+  // Uploaded files to remove from disk after the rows are gone.
+  const files: string[] = [];
+  const grab = (sql: string) => {
+    for (const r of db.prepare(sql).all(userId) as { p: string | null }[]) if (r.p) files.push(r.p);
+  };
+  grab("SELECT profile_photo_path AS p FROM users WHERE id = ?");
+  grab("SELECT cover_photo_path AS p FROM users WHERE id = ?");
+  grab("SELECT image_path AS p FROM posts WHERE author_id = ?");
+  grab("SELECT image_path AS p FROM stories WHERE author_id = ?");
+  grab("SELECT image_path AS p FROM classifieds WHERE author_id = ?");
+
+  const del = (sql: string) => db.prepare(sql).run(userId);
+
+  db.exec("BEGIN");
+  try {
+    // Children of content the member authored (their own posts/questions/comments).
+    del("DELETE FROM post_comments WHERE post_id IN (SELECT id FROM posts WHERE author_id = ?)");
+    del("DELETE FROM post_likes WHERE post_id IN (SELECT id FROM posts WHERE author_id = ?)");
+    del("DELETE FROM stream_qa_votes WHERE question_id IN (SELECT id FROM stream_qa_questions WHERE author_id = ?)");
+    del("DELETE FROM stream_comment_reports WHERE comment_id IN (SELECT id FROM stream_comments WHERE author_id = ?)");
+
+    // Their content.
+    for (const [table, col] of [
+      ["posts", "author_id"],
+      ["post_comments", "author_id"],
+      ["stories", "author_id"],
+      ["classifieds", "author_id"],
+      ["stream_comments", "author_id"],
+      ["stream_qa_questions", "author_id"],
+      ["business_reviews", "user_id"],
+      ["street_team_submissions", "submitter_id"],
+      ["neighborhood_reports", "reporter_id"],
+      ["pueblo_answers", "user_id"],
+      ["booth_answers", "user_id"],
+    ] as const) {
+      del(`DELETE FROM ${table} WHERE ${col} = ?`); // fixed whitelist, never user input
+    }
+
+    // Their activity and relationships.
+    for (const [table, col] of [
+      ["post_likes", "user_id"],
+      ["group_members", "user_id"],
+      ["friend_requests", "sender_id"],
+      ["friend_requests", "recipient_id"],
+      ["friendships", "user_a_id"],
+      ["friendships", "user_b_id"],
+      ["messages", "sender_id"],
+      ["messages", "recipient_id"],
+      ["business_followers", "user_id"],
+      ["business_memberships", "user_id"],
+      ["event_rsvps", "user_id"],
+      ["event_checkins", "user_id"],
+      ["deal_claims", "user_id"],
+      ["bop_votes", "voter_id"],
+      ["passport_stamps", "user_id"],
+      ["rewards_point_events", "user_id"],
+      ["pueblo_drop_claims", "user_id"],
+      ["stream_likes", "user_id"],
+      ["stream_viewer_sessions", "user_id"],
+      ["stream_reactions", "user_id"],
+      ["stream_poll_votes", "user_id"],
+      ["stream_flash_drop_claims", "user_id"],
+      ["stream_qa_votes", "user_id"],
+      ["stream_spotlight_requests", "user_id"],
+      ["stream_bans", "user_id"],
+      ["stream_comment_reports", "reporter_id"],
+      ["neighborhood_report_followers", "user_id"],
+      ["notifications", "user_id"],
+      ["notifications", "actor_id"],
+      ["email_verification_tokens", "user_id"],
+      ["password_reset_tokens", "user_id"],
+    ] as const) {
+      del(`DELETE FROM ${table} WHERE ${col} = ?`);
+    }
+    // Contact-form messages keep the text staff needed to answer but lose the link to the account.
+    db.prepare("UPDATE contact_messages SET user_id = NULL WHERE user_id = ?").run(userId);
+    // Streams they were hosting stop being live/scheduled.
+    db.prepare(
+      "UPDATE streams SET status = 'ended', ended_at = COALESCE(ended_at, datetime('now')) WHERE host_id = ? AND status IN ('live','scheduled')"
+    ).run(userId);
+
+    // Scrub the account row; random unusable password, sessions invalidated.
+    const randomHash = `deleted:${Math.random().toString(36).slice(2)}${Date.now().toString(36)}`;
+    db.prepare(
+      `UPDATE users SET
+         username = ?, email = ?, password_hash = ?, first_name = NULL, last_name = NULL,
+         city = NULL, bio = NULL, profile_photo_path = NULL, cover_photo_path = NULL,
+         latitude = NULL, longitude = NULL, location_city = NULL, location_region = NULL,
+         location_country = NULL, location_source = NULL, location_updated_at = NULL,
+         marketing_emails_opt_in = 0, email_verified_at = NULL, account_status = 'deleted',
+         session_version = session_version + 1, updated_at = datetime('now')
+       WHERE id = ?`
+    ).run(`deleted-member-${userId}`, `deleted-${userId}@deleted.invalid`, randomHash, userId);
+    db.exec("COMMIT");
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+  return { ok: true, files };
 }

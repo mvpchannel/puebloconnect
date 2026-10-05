@@ -68,6 +68,7 @@ export type EmailKind =
   | "email_verified"
   | "password_reset"
   | "password_changed"
+  | "account_deleted"
   | "friend_request"
   | "friend_accepted"
   | "new_message"
@@ -163,6 +164,14 @@ function passwordChangedTemplate(): string {
   `);
 }
 
+function accountDeletedTemplate(): string {
+  return wrapHtml(`
+    <p>Your Pueblo Connect account has been deleted.</p>
+    <p>Your profile, posts, comments, messages and other personal information were removed. Some records we are required to keep (such as payment records) no longer identify you.</p>
+    <p>If you did not do this, contact Pueblo Connect right away.</p>
+  `);
+}
+
 function emailVerifiedTemplate(): string {
   return wrapHtml(`
     <p style="font-size:18px;font-weight:bold;margin-top:0;">WELCOME TO PUEBLO CONNECT</p>
@@ -212,6 +221,18 @@ export function buildPasswordChangedEmail(to: string): EmailMessage {
       "Your Pueblo Connect password was successfully changed.\n\n" +
       "If you made this change, no further action is required.\n" +
       "If you did not make this change, contact Pueblo Connect immediately.",
+  };
+}
+
+export function buildAccountDeletedEmail(to: string): EmailMessage {
+  return {
+    to,
+    subject: "Your Pueblo Connect Account Was Deleted",
+    html: accountDeletedTemplate(),
+    text:
+      "Your Pueblo Connect account has been deleted.\n\n" +
+      "Your profile, posts, comments, messages and other personal information were removed.\n" +
+      "If you did not do this, contact Pueblo Connect right away.",
   };
 }
 
