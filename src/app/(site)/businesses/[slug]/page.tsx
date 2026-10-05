@@ -109,7 +109,14 @@ export default async function BusinessChannelPage({
           </figure>
           <div className="container-fluid">
             <div className="row merged">
-              <div className="col-lg-12">
+              <div className="col-lg-2 col-sm-3">
+                <div className="user-avatar">
+                  <figure>
+                    <img src={business.logo_path || PLACEHOLDER.businessLogo} alt={`${business.name} logo`} />
+                  </figure>
+                </div>
+              </div>
+              <div className="col-lg-10 col-sm-9">
                 <div className="timeline-info">
                   <ul>
                     <li className="admin-name">
