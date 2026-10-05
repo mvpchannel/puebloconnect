@@ -90,6 +90,10 @@ export default function Sidebar() {
             <i className="ti-timer" />
             <Link href="/tonight" title="">Happening Tonight</Link>
           </li>
+          <li>
+            <i className="ti-pulse" />
+            <Link href="/happening" title="">What&rsquo;s Happening</Link>
+          </li>
         </ul>
       </div>
     </aside>
