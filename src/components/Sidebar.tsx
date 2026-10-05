@@ -75,6 +75,10 @@ export default function Sidebar() {
             <Link href="/rewards" title="">Pueblo Rewards</Link>
           </li>
           <li>
+            <i className="ti-clipboard" />
+            <Link href="/classifieds" title="">Classifieds</Link>
+          </li>
+          <li>
             <i className="ti-timer" />
             <Link href="/tonight" title="">Happening Tonight</Link>
           </li>

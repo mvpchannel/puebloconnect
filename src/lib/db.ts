@@ -249,6 +249,24 @@ function getDb(): DatabaseSync {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_stories_created ON stories(created_at)`);
 
+    // Classifieds: community listings (items, services, wanted, free,
+    // announcements). Free to post for now; listings expire after 30 days.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS classifieds (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        author_id INTEGER NOT NULL REFERENCES users(id),
+        category TEXT NOT NULL,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        price_text TEXT,
+        image_path TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'sold')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        deleted_at TEXT
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_classifieds_created ON classifieds(created_at)`);
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS post_likes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5641,4 +5659,88 @@ export function getStoryById(id: number): StoryRow | undefined {
 export function softDeleteStory(id: number): void {
   const db = getDb();
   db.prepare("UPDATE stories SET deleted_at = datetime('now') WHERE id = ?").run(id);
+}
+
+
+// ---------------------------------------------------------------------------
+// Classifieds
+// ---------------------------------------------------------------------------
+
+export type ClassifiedRow = {
+  id: number;
+  author_id: number;
+  category: string;
+  title: string;
+  body: string;
+  price_text: string | null;
+  image_path: string | null;
+  status: "active" | "sold";
+  created_at: string;
+  author_username: string;
+  author_first_name: string | null;
+  author_last_name: string | null;
+};
+
+const CLASSIFIED_SELECT = `
+  SELECT c.id, c.author_id, c.category, c.title, c.body, c.price_text, c.image_path,
+         c.status, c.created_at,
+         u.username AS author_username, u.first_name AS author_first_name, u.last_name AS author_last_name
+  FROM classifieds c JOIN users u ON u.id = c.author_id
+`;
+
+export function createClassified(
+  authorId: number,
+  category: string,
+  title: string,
+  body: string,
+  priceText: string | null,
+  imagePath: string | null
+): ClassifiedRow {
+  const db = getDb();
+  const info = db
+    .prepare(
+      "INSERT INTO classifieds (author_id, category, title, body, price_text, image_path) VALUES (?, ?, ?, ?, ?, ?)"
+    )
+    .run(authorId, category, title, body, priceText, imagePath);
+  return db.prepare(`${CLASSIFIED_SELECT} WHERE c.id = ?`).get(Number(info.lastInsertRowid)) as ClassifiedRow;
+}
+
+// Active (not deleted, under 30 days old) listings, newest first. Optional
+// category filter and a simple title/body text search.
+export function listClassifieds(
+  opts: { category?: string | null; q?: string | null; limit?: number } = {}
+): ClassifiedRow[] {
+  const db = getDb();
+  const where = ["c.deleted_at IS NULL", "c.created_at > datetime('now', '-30 days')"];
+  const params: (string | number)[] = [];
+  if (opts.category) {
+    where.push("c.category = ?");
+    params.push(opts.category);
+  }
+  if (opts.q && opts.q.trim()) {
+    where.push("(c.title LIKE ? ESCAPE '\\' OR c.body LIKE ? ESCAPE '\\')");
+    const like = `%${opts.q.trim().replace(/[\\%_]/g, (m) => "\\" + m)}%`;
+    params.push(like, like);
+  }
+  return db
+    .prepare(`${CLASSIFIED_SELECT} WHERE ${where.join(" AND ")} ORDER BY c.created_at DESC, c.id DESC LIMIT ?`)
+    .all(...params, opts.limit ?? 60) as ClassifiedRow[];
+}
+
+export function getClassifiedById(id: number): (ClassifiedRow & { expired: boolean }) | undefined {
+  const db = getDb();
+  const row = db.prepare(`${CLASSIFIED_SELECT} WHERE c.id = ? AND c.deleted_at IS NULL`).get(id) as
+    | ClassifiedRow
+    | undefined;
+  if (!row) return undefined;
+  const expired = Date.now() - new Date(row.created_at.replace(" ", "T") + "Z").getTime() > 30 * 86400e3;
+  return { ...row, expired };
+}
+
+export function setClassifiedStatus(id: number, status: "active" | "sold"): void {
+  getDb().prepare("UPDATE classifieds SET status = ? WHERE id = ?").run(status, id);
+}
+
+export function softDeleteClassified(id: number): void {
+  getDb().prepare("UPDATE classifieds SET deleted_at = datetime('now') WHERE id = ?").run(id);
 }
