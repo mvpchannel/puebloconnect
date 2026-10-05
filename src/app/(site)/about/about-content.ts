@@ -45,7 +45,7 @@ export const GROUPS: ProgramGroup[] = [
       { name: "Pueblo Classifieds", status: "live", href: "/classifieds", description: "Inexpensive community listings for services, items and announcements." },
       { name: "Pueblo Business Spotlight", status: "live", href: "/spotlight", description: "A more substantial feature than an advertisement — a business's story, owner, history, products and community connection." },
       { name: "Own Your Block", status: "prototype", href: "/own-your-block", description: "A premium sponsorship: a business becomes a prominent sponsor of a neighborhood, category or Pueblo Connect area." },
-      { name: "Pueblo 360° Advertising", status: "soon", description: "One campaign across The Daily Pueblo, Pueblo Connect, Deals, Pass, Live, Events and the 3D Pueblo." },
+      { name: "Pueblo 360° Advertising", status: "prototype", href: "/360-advertising", description: "One campaign across The Daily Pueblo, Pueblo Connect, Deals, Pass, Live, Events and the 3D Pueblo." },
     ],
   },
   {
