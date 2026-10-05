@@ -32,6 +32,8 @@
 
 import * as THREE from "three";
 import { PLACES, type Place } from "./places";
+import { avatarLookFor, BUNTING_X, PALM_SPOTS, ROUTES, routeLength, routePose } from "./decor";
+import { createFigureKit, type Figure } from "./figures";
 
 export type RemotePlayerState = {
   id: string;
@@ -108,7 +110,7 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
 
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(220, 220),
-    new THREE.MeshStandardMaterial({ color: 0x79a85b })
+    new THREE.MeshStandardMaterial({ color: 0x9aa764 })
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
@@ -141,6 +143,10 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
   sidewalk(0, 12, 190, 5);
   box(22, 0.18, 22, 0xd8cbb3, 0, 0.1, 0); // plaza
 
+  // Jacaranda trees (purple blooms) at the plaza corners, green trees on Main Street.
+  const crownGeo = track(new THREE.SphereGeometry(3, 12, 8));
+  const jacarandaMat = track(new THREE.MeshStandardMaterial({ color: 0x9a7fd1 }));
+  const leafMat = track(new THREE.MeshStandardMaterial({ color: 0x397c43 }));
   for (const [x, z] of [
     [-18, -18],
     [18, -18],
@@ -150,9 +156,7 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     [50, 0],
   ] as const) {
     box(0.8, 5, 0.8, 0x6d4c32, x, 2.5, z);
-    const crownGeo = track(new THREE.SphereGeometry(3, 12, 8));
-    const crownMat = track(new THREE.MeshStandardMaterial({ color: 0x397c43 }));
-    const crown = new THREE.Mesh(crownGeo, crownMat);
+    const crown = new THREE.Mesh(crownGeo, Math.abs(x) === 18 ? jacarandaMat : leafMat);
     crown.position.set(x, 6, z);
     crown.castShadow = true;
     scene.add(crown);
@@ -189,6 +193,243 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     const panel = new THREE.Mesh(panelGeo, panelMat);
     panel.position.set(0, 6.5, -10.27);
     scene.add(panel);
+  }
+
+  // --- Northeast Los Angeles street decor --------------------------------
+  // Palms along the sidewalks (shared geometry, so cheap to repeat).
+  {
+    const trunkGeo = track(new THREE.CylinderGeometry(0.28, 0.45, 8.5, 7));
+    const trunkMat = track(new THREE.MeshStandardMaterial({ color: 0x8a6a49 }));
+    const frondGeo = track(new THREE.BoxGeometry(0.7, 0.12, 4.6));
+    const frondMat = track(new THREE.MeshStandardMaterial({ color: 0x4f8a3a }));
+    PALM_SPOTS.forEach(([x, z], i) => {
+      const palm = new THREE.Group();
+      const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+      trunk.position.y = 4.25;
+      trunk.castShadow = true;
+      palm.add(trunk);
+      for (let k = 0; k < 7; k++) {
+        const pivot = new THREE.Group();
+        pivot.position.y = 8.5;
+        pivot.rotation.y = (k / 7) * Math.PI * 2 + i;
+        const frond = new THREE.Mesh(frondGeo, frondMat);
+        frond.position.set(0, 0, 2.2);
+        frond.rotation.x = 0.35; // droop outward
+        pivot.add(frond);
+        palm.add(pivot);
+      }
+      palm.position.set(x, 0, z);
+      scene.add(palm);
+    });
+  }
+
+  // Papel picado bunting across Main Street: one instanced mesh for every pennant.
+  {
+    const colors = [0xe63b35, 0xf4c542, 0x2fa38a, 0xd04a6a, 0x3c7bd6, 0xf08a24];
+    const perString = 14;
+    const pennantGeo = track(new THREE.PlaneGeometry(1.1, 1.3));
+    const pennantMat = track(new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
+    const inst = new THREE.InstancedMesh(pennantGeo, pennantMat, BUNTING_X.length * perString);
+    const m4 = new THREE.Matrix4();
+    const col = new THREE.Color();
+    let n = 0;
+    for (const bx of BUNTING_X) {
+      for (let k = 0; k < perString; k++) {
+        const z = -8 + (k / (perString - 1)) * 16;
+        const y = 9 - Math.sin((k / (perString - 1)) * Math.PI) * 0.9; // gentle sag
+        m4.makeRotationFromEuler(new THREE.Euler(0, Math.PI / 2, Math.PI)); // point down, face along the street
+        m4.setPosition(bx, y, z);
+        inst.setMatrixAt(n, m4);
+        inst.setColorAt(n, col.setHex(colors[(k + n) % colors.length]));
+        n++;
+      }
+      const lineGeo = track(new THREE.BoxGeometry(0.06, 0.06, 16));
+      const lineMat = track(new THREE.MeshBasicMaterial({ color: 0x555555 }));
+      const line = new THREE.Mesh(lineGeo, lineMat);
+      line.position.set(bx, 9.15, 0);
+      scene.add(line);
+    }
+    inst.instanceMatrix.needsUpdate = true;
+    if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+    scene.add(inst);
+  }
+
+  // Low hills ringing the valley (Mount Washington / Elysian Hills feel).
+  {
+    const hillMat = track(new THREE.MeshStandardMaterial({ color: 0x8f8559, flatShading: true }));
+    const hillGeo = track(new THREE.ConeGeometry(1, 1, 7));
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2;
+      const r = 135 + (i % 3) * 8;
+      const hill = new THREE.Mesh(hillGeo, hillMat);
+      const h = 18 + (i % 4) * 6;
+      hill.scale.set(34 + (i % 3) * 8, h, 34 + (i % 2) * 10);
+      hill.position.set(Math.cos(a) * r, h / 2 - 0.5, Math.sin(a) * r);
+      scene.add(hill);
+    }
+  }
+
+  // Murals: three painted canvases shared by every building that gets one.
+  const muralMats: THREE.MeshBasicMaterial[] = [];
+  function makeMural(kind: number): THREE.MeshBasicMaterial {
+    const c = document.createElement("canvas");
+    c.width = 384;
+    c.height = 256;
+    const g = c.getContext("2d")!;
+    if (kind === 0) {
+      // sunburst over hills
+      g.fillStyle = "#f6d58a";
+      g.fillRect(0, 0, 384, 256);
+      g.translate(192, 190);
+      for (let i = 0; i < 18; i++) {
+        g.rotate(Math.PI / 9);
+        g.fillStyle = i % 2 ? "#f08a24" : "#e63b35";
+        g.beginPath();
+        g.moveTo(0, 0);
+        g.lineTo(-18, -300);
+        g.lineTo(18, -300);
+        g.fill();
+      }
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.fillStyle = "#2f7f9e";
+      g.beginPath();
+      g.arc(192, 190, 52, 0, Math.PI * 2);
+      g.fill();
+      g.fillStyle = "#3a6b3a";
+      g.beginPath();
+      g.moveTo(0, 256);
+      g.quadraticCurveTo(110, 150, 220, 256);
+      g.fill();
+      g.fillStyle = "#274e2a";
+      g.beginPath();
+      g.moveTo(130, 256);
+      g.quadraticCurveTo(280, 140, 384, 256);
+      g.fill();
+    } else if (kind === 1) {
+      // flowers and a hummingbird-ish shape on teal
+      g.fillStyle = "#1f7a78";
+      g.fillRect(0, 0, 384, 256);
+      const petals = ["#e63b35", "#f4c542", "#d04a6a", "#f08a24"];
+      for (let i = 0; i < 6; i++) {
+        const fx = 40 + i * 62;
+        const fy = 70 + (i % 2) * 90;
+        g.fillStyle = "#2f9e5a";
+        g.fillRect(fx - 3, fy, 6, 256 - fy);
+        for (let p = 0; p < 6; p++) {
+          g.fillStyle = petals[(i + p) % petals.length];
+          g.beginPath();
+          g.arc(fx + Math.cos((p / 6) * Math.PI * 2) * 17, fy + Math.sin((p / 6) * Math.PI * 2) * 17, 12, 0, Math.PI * 2);
+          g.fill();
+        }
+        g.fillStyle = "#f6e27a";
+        g.beginPath();
+        g.arc(fx, fy, 9, 0, Math.PI * 2);
+        g.fill();
+      }
+    } else {
+      // geometric tile pattern
+      const cols = ["#e63b35", "#f4c542", "#2f7f9e", "#f6efe0"];
+      for (let y = 0; y < 8; y++) {
+        for (let x = 0; x < 12; x++) {
+          g.fillStyle = cols[(x + y * 2) % cols.length];
+          g.fillRect(x * 32, y * 32, 32, 32);
+          g.fillStyle = cols[(x + y * 2 + 2) % cols.length];
+          g.beginPath();
+          g.moveTo(x * 32 + 16, y * 32 + 4);
+          g.lineTo(x * 32 + 28, y * 32 + 16);
+          g.lineTo(x * 32 + 16, y * 32 + 28);
+          g.lineTo(x * 32 + 4, y * 32 + 16);
+          g.fill();
+        }
+      }
+    }
+    const tex = track(new THREE.CanvasTexture(c));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return track(new THREE.MeshBasicMaterial({ map: tex }));
+  }
+  const muralGeo = track(new THREE.PlaneGeometry(9, 6));
+  const tileMat = track(new THREE.MeshStandardMaterial({ color: 0xb5532f }));
+  const creamMat = track(new THREE.MeshStandardMaterial({ color: 0xf1e6cf }));
+  let buildingCount = 0;
+
+  // Terracotta-tile roof, a Mission-style curved parapet over the door, and a
+  // painted mural on the side wall.
+  function addNelaDetails(p: Place) {
+    const idx = buildingCount++;
+    const roof = new THREE.Mesh(track(new THREE.BoxGeometry(p.width + 1.2, 0.7, p.depth + 1.2)), tileMat);
+    roof.position.set(p.x, p.height + 0.35, p.z);
+    roof.castShadow = true;
+    scene.add(roof);
+    const frontZ = p.z + p.depth / 2 + 0.6;
+    const parapet = new THREE.Mesh(track(new THREE.BoxGeometry(7, 2.2, 0.6)), creamMat);
+    parapet.position.set(p.x, p.height + 1.8, frontZ);
+    scene.add(parapet);
+    const crown = new THREE.Mesh(track(new THREE.CylinderGeometry(1.5, 1.5, 0.6, 14, 1, false, 0, Math.PI)), creamMat);
+    crown.rotation.set(Math.PI / 2, 0, Math.PI / 2);
+    crown.position.set(p.x, p.height + 2.9, frontZ);
+    scene.add(crown);
+    const kind = p.id === "daily" ? 0 : idx % 3;
+    muralMats[kind] ??= makeMural(kind);
+    const mural = new THREE.Mesh(muralGeo, muralMats[kind]);
+    mural.position.set(p.x + p.width / 2 + 0.07, Math.min(p.height * 0.5, 4.5), p.z);
+    mural.rotation.y = Math.PI / 2;
+    scene.add(mural);
+  }
+
+  // Clock tower on The Daily Pueblo, like the building in its banner.
+  function addClockTower(p: Place) {
+    const tx = p.x + p.width / 2 - 3.5;
+    const tz = p.z + p.depth / 2 - 3.5;
+    const shaft = box(4.2, 8, 4.2, 0xefe3c8, tx, p.height + 4.7, tz);
+    shaft.castShadow = true;
+    const cap = new THREE.Mesh(track(new THREE.ConeGeometry(3.4, 3.2, 4)), tileMat);
+    cap.rotation.y = Math.PI / 4;
+    cap.position.set(tx, p.height + 10.3, tz);
+    scene.add(cap);
+    const cc = document.createElement("canvas");
+    cc.width = 128;
+    cc.height = 128;
+    const g = cc.getContext("2d")!;
+    g.fillStyle = "#fffaf0";
+    g.beginPath();
+    g.arc(64, 64, 60, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = "#1a1a1a";
+    g.lineWidth = 5;
+    g.stroke();
+    g.lineWidth = 3;
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      g.beginPath();
+      g.moveTo(64 + Math.sin(a) * 48, 64 - Math.cos(a) * 48);
+      g.lineTo(64 + Math.sin(a) * 56, 64 - Math.cos(a) * 56);
+      g.stroke();
+    }
+    g.lineWidth = 6;
+    g.beginPath();
+    g.moveTo(64, 64);
+    g.lineTo(64, 28);
+    g.stroke();
+    g.lineWidth = 4;
+    g.beginPath();
+    g.moveTo(64, 64);
+    g.lineTo(88, 74);
+    g.stroke();
+    const tex = track(new THREE.CanvasTexture(cc));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const faceMat = track(new THREE.MeshBasicMaterial({ map: tex }));
+    const faceGeo = track(new THREE.PlaneGeometry(3, 3));
+    for (const [dx, dz, ry] of [
+      [0, 2.15, 0],
+      [2.15, 0, Math.PI / 2],
+      [-2.15, 0, -Math.PI / 2],
+      [0, -2.15, Math.PI],
+    ] as const) {
+      const f = new THREE.Mesh(faceGeo, faceMat);
+      f.position.set(tx + dx, p.height + 6.3, tz + dz);
+      f.rotation.y = ry;
+      scene.add(f);
+    }
   }
 
   const clickable: THREE.Object3D[] = [];
@@ -272,8 +513,10 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
       scene.add(face);
       clickable.push(face);
     }
+    addNelaDetails(p);
+    if (p.id === "daily") addClockTower(p);
     const sign = makeLabel(p.name);
-    sign.position.set(p.x, p.height + 2, p.z);
+    sign.position.set(p.x, p.height + 4.2, p.z);
     scene.add(sign);
     destinations[p.id] = new THREE.Vector3(p.x, 1.1, p.z + Math.sign(p.z || 1) * (p.depth / 2 + 7));
   }
@@ -313,22 +556,14 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     dropMeshes.delete(id);
   }
 
-  // --- Local player avatar -------------------------------------------
+  // --- People: the visitor's avatar, other members and walking pedestrians
+  const figures = createFigureKit(track);
+
   const player = new THREE.Group();
-  const bodyGeo = track(new THREE.CapsuleGeometry(0.7, 1.5, 4, 8));
-  const bodyMat = track(new THREE.MeshStandardMaterial({ color: 0xe63b35 }));
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 1.5;
-  body.castShadow = true;
-  player.add(body);
-  const headGeo = track(new THREE.SphereGeometry(0.55, 12, 10));
-  const headMat = track(new THREE.MeshStandardMaterial({ color: 0xc88f68 }));
-  const head = new THREE.Mesh(headGeo, headMat);
-  head.position.y = 3;
-  head.castShadow = true;
-  player.add(head);
+  const playerFigure = figures.build({ ...avatarLookFor(opts.playerName || "Pueblo Member"), shirt: 0xe63b35 });
+  player.add(playerFigure.group);
   const nameplate = makeLabel(opts.playerName || "Pueblo Member", 384);
-  nameplate.position.set(0, 4.1, 0);
+  nameplate.position.set(0, 4.3, 0);
   nameplate.scale.set(6, 1.5, 1);
   player.add(nameplate);
   nameSprites.push(nameplate);
@@ -342,16 +577,9 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     let entry = remotePlayers.get(state.id);
     if (!entry) {
       const group = new THREE.Group();
-      const b2 = new THREE.Mesh(bodyGeo, track(new THREE.MeshStandardMaterial({ color: 0x4d91bd })));
-      b2.position.y = 1.5;
-      b2.castShadow = true;
-      group.add(b2);
-      const h2 = new THREE.Mesh(headGeo, track(new THREE.MeshStandardMaterial({ color: 0xc88f68 })));
-      h2.position.y = 3;
-      h2.castShadow = true;
-      group.add(h2);
+      group.add(figures.build(avatarLookFor(state.name)).group);
       const tag = makeLabel(state.name, 384);
-      tag.position.set(0, 4.1, 0);
+      tag.position.set(0, 4.3, 0);
       tag.scale.set(6, 1.5, 1);
       group.add(tag);
       scene.add(group);
@@ -368,6 +596,19 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     scene.remove(entry.group);
     remotePlayers.delete(id);
   }
+
+  // Pedestrians stroll the sidewalks. They are scenery only: not clickable,
+  // not real members, and they have no names.
+  const pedestrians: { figure: Figure; route: (typeof ROUTES)[number]; start: number; len: number }[] = [];
+  ROUTES.forEach((route, ri) => {
+    const len = routeLength(route.points, route.loop);
+    for (let w = 0; w < route.walkers; w++) {
+      const figure = figures.build(avatarLookFor(`pedestrian-${ri}-${w}`));
+      figure.group.scale.setScalar(0.92);
+      scene.add(figure.group);
+      pedestrians.push({ figure, route, start: (len * 2 * w) / route.walkers + w * 3, len });
+    }
+  });
 
   // --- Input: keyboard, drag-to-look, mobile pad, click-to-select -----
   let yaw = Math.PI;
@@ -469,6 +710,7 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     player.position.addScaledVector(f, forward * speed * dt).addScaledVector(r, strafe * speed * dt);
     player.position.x = THREE.MathUtils.clamp(player.position.x, -WORLD_BOUND, WORLD_BOUND);
     player.position.z = THREE.MathUtils.clamp(player.position.z, -WORLD_BOUND, WORLD_BOUND);
+    playerFigure.setWalk(clock.elapsedTime * 9, forward || strafe ? 1 : 0);
     if (forward || strafe) {
       player.rotation.y = Math.atan2(f.x * forward + r.x * strafe, f.z * forward + r.z * strafe);
     }
@@ -480,6 +722,12 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     camera.position.lerp(camTarget, 1 - Math.pow(0.001, dt));
     camera.lookAt(player.position.x, player.position.y + 2 + pitch * 4, player.position.z);
     const t = clock.elapsedTime;
+    for (const ped of pedestrians) {
+      const pose = routePose(ped.route, ped.start + t * ped.route.speed);
+      ped.figure.group.position.set(pose.x, 0, pose.z);
+      ped.figure.group.rotation.y = pose.heading;
+      ped.figure.setWalk(t * 6 + ped.start, 1);
+    }
     dropMeshes.forEach((g) => {
       const gem = g.userData.gem as THREE.Object3D;
       gem.rotation.y += dt * 1.6;
