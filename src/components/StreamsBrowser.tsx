@@ -49,8 +49,14 @@ function cardGradient(id: number) {
   return GRADIENTS[id % GRADIENTS.length];
 }
 
-export default function StreamsBrowser({ isLoggedIn }: { isLoggedIn: boolean }) {
-  const [tab, setTab] = useState<Tab>("live");
+export default function StreamsBrowser({
+  isLoggedIn,
+  tabs = ["live", "scheduled", "ended"],
+}: {
+  isLoggedIn: boolean;
+  tabs?: Tab[];
+}) {
+  const [tab, setTab] = useState<Tab>(tabs[0]);
   const [streams, setStreams] = useState<StreamSummary[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -72,7 +78,7 @@ export default function StreamsBrowser({ isLoggedIn }: { isLoggedIn: boolean }) 
     <div>
       <div className="central-meta item" style={{ padding: "12px 20px" }}>
         <div style={{ display: "flex", gap: 8 }}>
-          {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
+          {tabs.map((t) => (
             <button
               key={t}
               type="button"

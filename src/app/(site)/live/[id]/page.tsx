@@ -161,7 +161,7 @@ export default async function StreamDetailPage({
                 <SeeSomethingPromo />
               </div>
               <div className="col-lg-9">
-                <PuebloLiveHero liveCount={listStreams("live", null).length} />
+                <PuebloLiveHero isLoggedIn={Boolean(session)} />
                 <PassportVisitBeacon
                   isLoggedIn={Boolean(session)}
                   category="pueblo_live"

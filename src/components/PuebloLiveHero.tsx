@@ -1,55 +1,44 @@
-// Page-specific banner for the Pueblo Live section — scoped to this
-// page only, not a redesign of the sitewide Header/Sidebar chrome.
-// No "Go Live" button here: stream creation is the real
-// StreamCreateForm already on the list page, right below this banner
-// — a second button here would just have to fake-navigate to it.
-export default function PuebloLiveHero({ liveCount }: { liveCount?: number }) {
+import LiveGoLiveButton from "./LiveGoLiveButton";
+
+// Pueblo Live page header: broadcast mark, wordmark, tagline and the
+// red Go Live button (opens the real create/schedule form).
+export default function PuebloLiveHero({ isLoggedIn }: { isLoggedIn: boolean }) {
   return (
     <div
-      className="central-meta item"
       style={{
-        background: "linear-gradient(120deg, #1a1a1a, #2c2c2c)",
-        color: "#fff",
-        padding: "22px 24px",
+        background: "#fff",
+        borderRadius: 18,
+        padding: "20px 28px",
+        marginBottom: 18,
         display: "flex",
         alignItems: "center",
         justifyContent: "space-between",
         flexWrap: "wrap",
-        gap: 12,
+        gap: 18,
+        boxShadow: "0 1px 6px rgba(11,42,91,0.08)",
       }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-        <span
-          style={{
-            width: 14,
-            height: 14,
-            borderRadius: "50%",
-            background: "#e02020",
-            display: "inline-block",
-            boxShadow: "0 0 0 rgba(224,32,32,0.6)",
-            animation: "pc-live-pulse 1.6s infinite",
-          }}
-        />
+      <div style={{ display: "flex", alignItems: "center", gap: 28, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden="true">
+            <circle cx="28" cy="28" r="7" fill="#e8261e" />
+            <path d="M17 17a15 15 0 0 0 0 22M39 17a15 15 0 0 1 0 22" stroke="#e8261e" strokeWidth="4" strokeLinecap="round" fill="none" />
+            <path d="M9 9a27 27 0 0 0 0 38M47 9a27 27 0 0 1 0 38" stroke="#e8261e" strokeWidth="4" strokeLinecap="round" fill="none" />
+          </svg>
+          <h1 style={{ margin: 0, fontSize: 42, fontWeight: 900, color: "#0b2a5b", letterSpacing: 0.5, lineHeight: 1 }}>
+            PUEBLO LIVE
+          </h1>
+        </div>
         <div>
-          <h4 style={{ margin: 0, letterSpacing: 1, color: "#fff" }}>PUEBLO LIVE</h4>
-          <span style={{ color: "#bbb", fontSize: 13 }}>
-            Watch, chat, and earn Pueblo Rewards with your community — live.
-          </span>
+          <div style={{ fontSize: 26, fontWeight: 800, color: "#0b2a5b", lineHeight: 1.15 }}>
+            Your Community. <span style={{ color: "#1673f0" }}>Live.</span>
+          </div>
+          <div style={{ color: "#4b5b73", fontSize: 14, marginTop: 4 }}>
+            Local People &bull; Local Businesses &bull; Local Events &bull; Real Conversations
+          </div>
         </div>
       </div>
-      {typeof liveCount === "number" && liveCount > 0 && (
-        <span style={{ color: "#f5a623", fontSize: 13, fontWeight: 600 }}>
-          <i className="fa fa-circle" style={{ marginRight: 6, fontSize: 9 }} />
-          {liveCount} live now
-        </span>
-      )}
-      <style>{`
-        @keyframes pc-live-pulse {
-          0% { box-shadow: 0 0 0 0 rgba(224,32,32,0.55); }
-          70% { box-shadow: 0 0 0 9px rgba(224,32,32,0); }
-          100% { box-shadow: 0 0 0 0 rgba(224,32,32,0); }
-        }
-      `}</style>
+      <LiveGoLiveButton isLoggedIn={isLoggedIn} />
     </div>
   );
 }

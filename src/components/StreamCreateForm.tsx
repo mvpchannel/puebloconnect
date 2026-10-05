@@ -8,9 +8,17 @@ import { useRouter } from "next/navigation";
 // design doc — embedUrl is wherever the host is already broadcasting on
 // YouTube/Facebook/Vimeo Live; Pueblo Connect never runs its own video
 // server, it just stores that URL and the chat/likes/moderation around it.
-export default function StreamCreateForm() {
+export default function StreamCreateForm({
+  embedded = false,
+  onCancel,
+}: {
+  // embedded: rendered inside the Go Live modal on /live — always open,
+  // no card wrapper, Cancel closes the modal.
+  embedded?: boolean;
+  onCancel?: () => void;
+} = {}) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(embedded);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [platform, setPlatform] = useState<"youtube" | "facebook" | "vimeo">("youtube");
@@ -51,7 +59,7 @@ export default function StreamCreateForm() {
     }
   }
 
-  if (!open) {
+  if (!open && !embedded) {
     return (
       <div className="central-meta item" style={{ textAlign: "center", padding: 20 }}>
         <button className="mtr-btn signup" type="button" onClick={() => setOpen(true)}>
@@ -62,9 +70,9 @@ export default function StreamCreateForm() {
   }
 
   return (
-    <div className="central-meta item">
-      <div style={{ padding: 20 }}>
-        <h4 style={{ marginBottom: 12 }}>Go live</h4>
+    <div className={embedded ? undefined : "central-meta item"}>
+      <div style={{ padding: embedded ? 0 : 20 }}>
+        {!embedded && <h4 style={{ marginBottom: 12 }}>Go live</h4>}
         <p style={{ color: "#888", marginBottom: 12, fontSize: 13 }}>
           Start broadcasting on YouTube Live, Facebook Live, or Vimeo Live first, then paste that
           broadcast&apos;s share/embed link here — Pueblo Connect shows your stream, chat, and
@@ -156,7 +164,7 @@ export default function StreamCreateForm() {
             <button className="mtr-btn signup" type="submit" disabled={busy || !title.trim() || !embedUrl.trim()}>
               <span>{busy ? "Saving…" : when === "now" ? "Go Live" : "Schedule"}</span>
             </button>
-            <button className="mtr-btn signin" type="button" onClick={() => setOpen(false)}>
+            <button className="mtr-btn signin" type="button" onClick={() => (embedded && onCancel ? onCancel() : setOpen(false))}>
               <span>Cancel</span>
             </button>
           </div>
