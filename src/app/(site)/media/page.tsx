@@ -56,6 +56,11 @@ export default async function MediaHubPage() {
                 <Sidebar />
               </div>
               <div className="col-lg-9">
+                <img
+                  src="/images/brand/the-daily-pueblo.jpg"
+                  alt="The Daily Pueblo"
+                  style={{ width: "100%", maxHeight: 280, objectFit: "cover", objectPosition: "center 35%", borderRadius: 18, marginBottom: 18, display: "block" }}
+                />
                 <h3 style={{ marginBottom: 4 }}>Pueblo Media Hub</h3>
                 <p style={{ color: "#888", marginBottom: 6 }}>Watch. Read. Discover. Connect.</p>
 
