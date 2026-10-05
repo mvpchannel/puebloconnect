@@ -14,6 +14,7 @@ import { checkAndRecordRateLimit, RATE_LIMITS, clientIp } from "@/lib/rate-limit
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { sniffImageExt } from "@/lib/image-sniff";
 
 // POST /api/auth/register — real signup. Always creates a 'member'; there
 // is deliberately no way for a client-submitted request to create an
@@ -153,9 +154,17 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    const realExt = sniffImageExt(buffer);
+    if (!realExt) {
+      return NextResponse.json(
+        { error: "Profile photo must be a PNG, JPEG, or WEBP image." },
+        { status: 400 }
+      );
+    }
     const uploadsDir = path.join(process.cwd(), "public", "uploads", "avatars");
     if (!existsSync(uploadsDir)) mkdirSync(uploadsDir, { recursive: true });
-    const safeExt = ext === "jpeg" ? "jpg" : ext;
+    const safeExt = realExt; // from the file bytes, not the client-declared type
+    void ext;
     const fileName = `${randomUUID()}.${safeExt}`;
     writeFileSync(path.join(uploadsDir, fileName), buffer);
     profilePhotoPath = `/uploads/avatars/${fileName}`;
