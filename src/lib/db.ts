@@ -288,6 +288,23 @@ function getDb(): DatabaseSync {
       )
     `);
 
+    // Daily Pueblo Digital Connection: short tracked links (/q/<code>) that a
+    // printed QR code points at. Visiting one counts a scan and redirects to
+    // an internal page of this site.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS qr_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        code TEXT UNIQUE NOT NULL,
+        label TEXT NOT NULL,
+        target_path TEXT NOT NULL,
+        scans INTEGER NOT NULL DEFAULT 0,
+        last_scanned_at TEXT,
+        created_by INTEGER REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        deleted_at TEXT
+      )
+    `);
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS post_likes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5874,4 +5891,74 @@ export function listSpotlights(opts: { publishedOnly: boolean }): SpotlightRow[]
 
 export function softDeleteSpotlight(id: number): void {
   getDb().prepare("UPDATE spotlights SET deleted_at = datetime('now') WHERE id = ?").run(id);
+}
+
+
+// ---------------------------------------------------------------------------
+// QR links (The Daily Pueblo Digital Connection)
+// ---------------------------------------------------------------------------
+
+export type QrLinkRow = {
+  id: number;
+  code: string;
+  label: string;
+  target_path: string;
+  scans: number;
+  last_scanned_at: string | null;
+  created_at: string;
+};
+
+const QR_CODE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"; // no look-alike characters
+
+function randomQrCode(): string {
+  const bytes = new Uint8Array(7);
+  crypto.getRandomValues(bytes);
+  let out = "";
+  for (const b of bytes) out += QR_CODE_ALPHABET[b % QR_CODE_ALPHABET.length];
+  return out;
+}
+
+export function createQrLink(label: string, targetPath: string, createdBy: number | null): QrLinkRow {
+  const db = getDb();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = randomQrCode();
+    try {
+      const info = db
+        .prepare("INSERT INTO qr_links (code, label, target_path, created_by) VALUES (?, ?, ?, ?)")
+        .run(code, label, targetPath, createdBy);
+      return getQrLinkById(Number(info.lastInsertRowid))!;
+    } catch (e) {
+      if (!String((e as Error).message).includes("UNIQUE")) throw e;
+    }
+  }
+  throw new Error("Could not generate a unique code");
+}
+
+const QR_COLUMNS = "id, code, label, target_path, scans, last_scanned_at, created_at";
+
+export function getQrLinkById(id: number): QrLinkRow | undefined {
+  return getDb()
+    .prepare(`SELECT ${QR_COLUMNS} FROM qr_links WHERE id = ? AND deleted_at IS NULL`)
+    .get(id) as QrLinkRow | undefined;
+}
+
+export function listQrLinks(): QrLinkRow[] {
+  return getDb()
+    .prepare(`SELECT ${QR_COLUMNS} FROM qr_links WHERE deleted_at IS NULL ORDER BY id DESC`)
+    .all() as QrLinkRow[];
+}
+
+// Looks up a code and records the visit in one step; undefined if unknown or deleted.
+export function recordQrScan(code: string): QrLinkRow | undefined {
+  const db = getDb();
+  const row = db
+    .prepare(`SELECT ${QR_COLUMNS} FROM qr_links WHERE code = ? AND deleted_at IS NULL`)
+    .get(code) as QrLinkRow | undefined;
+  if (!row) return undefined;
+  db.prepare("UPDATE qr_links SET scans = scans + 1, last_scanned_at = datetime('now') WHERE id = ?").run(row.id);
+  return row;
+}
+
+export function softDeleteQrLink(id: number): void {
+  getDb().prepare("UPDATE qr_links SET deleted_at = datetime('now') WHERE id = ?").run(id);
 }

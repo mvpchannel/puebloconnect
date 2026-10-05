@@ -69,7 +69,7 @@ export const GROUPS: ProgramGroup[] = [
       { name: "What's Happening in the Pueblo?", status: "prototype", href: "/happening", description: "Instead of searching, see what's interesting right now: the newest events, deals, business stories, classifieds and live broadcasts in one place. Trending and popularity rankings come next." },
       { name: "What's Happening Tonight?", status: "live", href: "/tonight", description: "Open it and see what's on today and tonight: food specials, live music, family activities, sports, meetings, Live broadcasts and Flash Deals." },
       { name: "Pueblo Media Hub", status: "prototype", href: "/media", description: "Watch. Read. Discover. Connect. Pueblo Live broadcasts and replays, Daily Pueblo content and other Pueblo-produced media in one place. Live broadcasts, replays and Business Spotlight stories are there now; Daily Pueblo articles come next." },
-      { name: "The Daily Pueblo Digital Connection", status: "soon", description: "Newspaper stories and ads carry QR codes into Pueblo Connect — an ad leads to its Deal, an article to a video, an event story to registration." },
+      { name: "The Daily Pueblo Digital Connection", status: "prototype", description: "Newspaper stories and ads carry QR codes into Pueblo Connect — an ad leads to its Deal, an article to a video, an event story to registration. Staff can already create trackable QR codes that open any page on the site; automatic QR codes on every story and ad come next." },
       { name: "We Asked the Pueblo", status: "soon", description: "Residents answer questions about neighborhoods, schools, businesses and culture; selected answers appear both online and in The Daily Pueblo." },
     ],
   },
