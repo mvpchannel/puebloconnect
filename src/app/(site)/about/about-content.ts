@@ -81,7 +81,7 @@ export const GROUPS: ProgramGroup[] = [
       { name: "3D Business Storefronts", status: "prototype", href: "/explore-3d", description: "Branded locations inside the 3D Pueblo — walk up, click, and see a business's profile, deal, menu, website or video. Today a business can have a colored building that opens its business page; custom designs, interiors and in-world deals come next." },
       { name: "360° Virtual Business Tours", status: "prototype", href: "/tours", description: "The goal: walk to a business in the 3D Pueblo, select ENTER BUSINESS, and explore the real interior through connected 360° views. Today, staff can attach a Matterport, YouTube or Vimeo tour to a business and it gets its own tour page; entering from the 3D Pueblo is not built yet." },
       { name: "Pueblo 3D Advertising", status: "prototype", href: "/explore-3d", description: "Billboards, building signs, banners and sponsored areas inside the virtual community. Storefront buildings can now carry a rooftop billboard showing a headline or the business's current deal; banners and sponsored areas come next." },
-      { name: "Pueblo Drops / Treasure Hunts", status: "soon", description: "Digital prizes, coupons and “Golden Pueblo Tickets” hidden in the 3D Pueblo — a reason to keep coming back." },
+      { name: "Pueblo Drops / Treasure Hunts", status: "prototype", href: "/treasures", description: "Digital prizes, coupons and “Golden Pueblo Tickets” hidden in the 3D Pueblo — a reason to keep coming back. Staff can hide treasures at spots in the 3D city; members who find one get a code to redeem the prize. Redemption is handled by the business or staff named in the prize." },
     ],
   },
 ];

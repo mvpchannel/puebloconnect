@@ -50,11 +50,24 @@ export type CityEngineOptions = {
   onReady?: () => void;
   /** Buildings to place. Defaults to the built-in sample set. */
   places?: Place[];
+  /** Treasure drops to show as glowing objects the member can find and click. */
+  drops?: DropMarker[];
+  /** Called when a drop is clicked; `near` is whether the avatar is close enough to grab it. */
+  onDropClick?: (id: number, near: boolean) => void;
 };
+
+export type DropMarker = { id: number; x: number; z: number; golden: boolean };
+
+/** How close (scene units) the avatar must be to pick up a drop. This is a play
+ *  mechanic checked in the browser, not a security check; each drop is also
+ *  limited to one claim per member and an optional total by the server. */
+export const DROP_PICKUP_RADIUS = 14;
 
 export type CityEngine = {
   /** Walk the local avatar to a named destination (used by the map/HUD). */
   teleportTo: (placeId: string) => void;
+  /** Remove a drop's marker from the scene (after it has been claimed). */
+  removeDrop: (id: number) => void;
   /** Multiplayer extension point — see module header. Unused in Phase 1. */
   upsertRemotePlayer: (state: RemotePlayerState) => void;
   removeRemotePlayer: (id: string) => void;
@@ -263,6 +276,40 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
   }
   (opts.places ?? PLACES).forEach(addBuilding);
 
+  // --- Treasure drops ------------------------------------------------
+  // A spinning, glowing gem on a small pedestal at each hiding spot. Clicking
+  // it (see onClick) asks the page to claim it.
+  const dropMeshes = new Map<number, THREE.Group>();
+  for (const d of opts.drops ?? []) {
+    const g = new THREE.Group();
+    const color = d.golden ? 0xffc928 : 0x38d6c4;
+    const gem = new THREE.Mesh(
+      track(new THREE.OctahedronGeometry(1.1)),
+      track(new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.9 }))
+    );
+    gem.position.y = 2.6;
+    gem.userData.dropId = d.id;
+    const base = new THREE.Mesh(
+      track(new THREE.CylinderGeometry(0.7, 0.9, 0.9, 10)),
+      track(new THREE.MeshStandardMaterial({ color: 0x555555 }))
+    );
+    base.position.y = 0.45;
+    base.userData.dropId = d.id;
+    g.add(gem, base);
+    g.position.set(d.x, 0, d.z);
+    g.userData.gem = gem;
+    scene.add(g);
+    dropMeshes.set(d.id, g);
+    clickable.push(gem, base);
+  }
+  function removeDrop(id: number) {
+    const g = dropMeshes.get(id);
+    if (!g) return;
+    scene.remove(g);
+    for (let i = clickable.length - 1; i >= 0; i--) if (clickable[i].userData.dropId === id) clickable.splice(i, 1);
+    dropMeshes.delete(id);
+  }
+
   // --- Local player avatar -------------------------------------------
   const player = new THREE.Group();
   const bodyGeo = track(new THREE.CapsuleGeometry(0.7, 1.5, 4, 8));
@@ -360,6 +407,13 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
     const hit = raycaster.intersectObjects(clickable, false)[0];
+    const dropId = hit?.object.userData.dropId as number | undefined;
+    if (dropId !== undefined) {
+      const m = dropMeshes.get(dropId);
+      const near = m ? Math.hypot(player.position.x - m.position.x, player.position.z - m.position.z) <= DROP_PICKUP_RADIUS : false;
+      opts.onDropClick?.(dropId, near);
+      return;
+    }
     const place = hit?.object.userData.place as Place | undefined;
     if (place) onPlaceClick(place);
   }
@@ -422,6 +476,12 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
       .add(new THREE.Vector3(-Math.sin(yaw) * dist, height, -Math.cos(yaw) * dist));
     camera.position.lerp(camTarget, 1 - Math.pow(0.001, dt));
     camera.lookAt(player.position.x, player.position.y + 2 + pitch * 4, player.position.z);
+    const t = clock.elapsedTime;
+    dropMeshes.forEach((g) => {
+      const gem = g.userData.gem as THREE.Object3D;
+      gem.rotation.y += dt * 1.6;
+      gem.position.y = 2.6 + Math.sin(t * 2) * 0.25;
+    });
     renderer.render(scene, camera);
   }
   rafId = requestAnimationFrame(animate);
@@ -443,5 +503,5 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     }
   }
 
-  return { teleportTo, upsertRemotePlayer, removeRemotePlayer, setMobileMove, dispose };
+  return { teleportTo, removeDrop, upsertRemotePlayer, removeRemotePlayer, setMobileMove, dispose };
 }

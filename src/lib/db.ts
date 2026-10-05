@@ -333,6 +333,38 @@ function getDb(): DatabaseSync {
       )
     `);
 
+    // Pueblo Drops / Treasure Hunts: prizes hidden at spots in the 3D Pueblo.
+    // A claim records a short code the member shows to redeem the prize;
+    // staff verify the code and mark it redeemed. Points (if any) go through
+    // the normal rewards system.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pueblo_drops (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        prize_text TEXT NOT NULL,
+        kind TEXT NOT NULL DEFAULT 'prize' CHECK (kind IN ('prize', 'golden_ticket')),
+        x REAL NOT NULL,
+        z REAL NOT NULL,
+        points INTEGER NOT NULL DEFAULT 0,
+        max_claims INTEGER,
+        expires_at TEXT,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        deleted_at TEXT
+      )
+    `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pueblo_drop_claims (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        drop_id INTEGER NOT NULL REFERENCES pueblo_drops(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        code TEXT NOT NULL,
+        claimed_at TEXT NOT NULL DEFAULT (datetime('now')),
+        redeemed_at TEXT,
+        UNIQUE(drop_id, user_id)
+      )
+    `);
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS post_likes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -4597,6 +4629,7 @@ export const POINT_VALUES = {
   passport_stamp: 5,
   stream_watch: 10,
   stream_flash_drop: 5,
+  treasure_drop: 5, // default; a treasure drop awards its own admin-set points
 } as const;
 
 export type RewardsAction = keyof typeof POINT_VALUES;
@@ -4710,6 +4743,7 @@ export const REWARDS_ACTION_LABELS: Record<RewardsAction, string> = {
   passport_stamp: "Earned a Pueblo Passport stamp",
   stream_watch: "Watched a Pueblo Live stream",
   stream_flash_drop: "Claimed a Pueblo Live flash drop",
+  treasure_drop: "Found a treasure drop in the 3D Pueblo",
 };
 
 // ---------------------------------------------------------------------
@@ -6286,4 +6320,169 @@ export function listBusinessesWithTourState(): { id: number; name: string; categ
   return getDb()
     .prepare("SELECT id, name, category, tour_url FROM businesses ORDER BY name COLLATE NOCASE")
     .all() as { id: number; name: string; category: string; tour_url: string | null }[];
+}
+
+
+// ---------------------------------------------------------------------------
+// Pueblo Drops / Treasure Hunts
+// ---------------------------------------------------------------------------
+
+export type PuebloDrop = {
+  id: number;
+  title: string;
+  prize_text: string;
+  kind: "prize" | "golden_ticket";
+  x: number;
+  z: number;
+  points: number;
+  max_claims: number | null;
+  expires_at: string | null;
+  active: number;
+  created_at: string;
+  claim_count: number;
+};
+
+const DROP_SELECT = `
+  SELECT d.id, d.title, d.prize_text, d.kind, d.x, d.z, d.points, d.max_claims, d.expires_at,
+         d.active, d.created_at,
+         (SELECT COUNT(*) FROM pueblo_drop_claims c WHERE c.drop_id = d.id) AS claim_count
+  FROM pueblo_drops d
+`;
+
+export type PuebloDropInput = {
+  title: string;
+  prizeText: string;
+  kind: "prize" | "golden_ticket";
+  x: number;
+  z: number;
+  points: number;
+  maxClaims: number | null;
+  expiresInDays: number | null;
+};
+
+export function createPuebloDrop(input: PuebloDropInput): PuebloDrop {
+  const db = getDb();
+  const expires = input.expiresInDays
+    ? new Date(Date.now() + input.expiresInDays * 86400000).toISOString().slice(0, 19).replace("T", " ")
+    : null;
+  const info = db
+    .prepare(
+      `INSERT INTO pueblo_drops (title, prize_text, kind, x, z, points, max_claims, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(input.title, input.prizeText, input.kind, input.x, input.z, input.points, input.maxClaims, expires);
+  return getPuebloDropById(Number(info.lastInsertRowid))!;
+}
+
+export function getPuebloDropById(id: number): PuebloDrop | undefined {
+  return getDb().prepare(`${DROP_SELECT} WHERE d.id = ? AND d.deleted_at IS NULL`).get(id) as PuebloDrop | undefined;
+}
+
+export function listPuebloDropsForAdmin(): PuebloDrop[] {
+  return getDb().prepare(`${DROP_SELECT} WHERE d.deleted_at IS NULL ORDER BY d.id DESC`).all() as PuebloDrop[];
+}
+
+export function setPuebloDropActive(id: number, active: boolean): void {
+  getDb().prepare("UPDATE pueblo_drops SET active = ? WHERE id = ?").run(active ? 1 : 0, id);
+}
+
+export function softDeletePuebloDrop(id: number): void {
+  getDb().prepare("UPDATE pueblo_drops SET deleted_at = datetime('now') WHERE id = ?").run(id);
+}
+
+// Drops this member can still find: active, not expired, not full, not already theirs.
+export function listFindableDrops(userId: number): PuebloDrop[] {
+  return (
+    getDb()
+      .prepare(
+        `${DROP_SELECT}
+         WHERE d.deleted_at IS NULL AND d.active = 1
+           AND (d.expires_at IS NULL OR d.expires_at > datetime('now'))
+           AND NOT EXISTS (SELECT 1 FROM pueblo_drop_claims c WHERE c.drop_id = d.id AND c.user_id = ?)
+         ORDER BY d.id`
+      )
+      .all(userId) as PuebloDrop[]
+  ).filter((d) => d.max_claims === null || d.claim_count < d.max_claims);
+}
+
+function randomDropCode(): string {
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(6);
+  crypto.getRandomValues(bytes);
+  let out = "";
+  for (const b of bytes) out += alphabet[b % alphabet.length];
+  return out;
+}
+
+export type DropClaimResult =
+  | { claimed: true; drop: PuebloDrop; code: string }
+  | { claimed: false; reason: "not_found" | "inactive" | "expired" | "gone" | "already" };
+
+// Everything runs synchronously on one connection, so the "is it full?" check
+// and the insert cannot interleave with another request.
+export function claimPuebloDrop(dropId: number, userId: number): DropClaimResult {
+  const db = getDb();
+  const drop = getPuebloDropById(dropId);
+  if (!drop) return { claimed: false, reason: "not_found" };
+  if (!drop.active) return { claimed: false, reason: "inactive" };
+  const now = (db.prepare("SELECT datetime('now') AS n").get() as { n: string }).n;
+  if (drop.expires_at && drop.expires_at <= now) return { claimed: false, reason: "expired" };
+  if (db.prepare("SELECT id FROM pueblo_drop_claims WHERE drop_id = ? AND user_id = ?").get(dropId, userId)) {
+    return { claimed: false, reason: "already" };
+  }
+  if (drop.max_claims !== null && drop.claim_count >= drop.max_claims) return { claimed: false, reason: "gone" };
+  const code = randomDropCode();
+  db.prepare("INSERT INTO pueblo_drop_claims (drop_id, user_id, code) VALUES (?, ?, ?)").run(dropId, userId, code);
+  if (drop.points > 0) awardPoints(userId, "treasure_drop", `drop:${dropId}`, drop.points);
+  return { claimed: true, drop, code };
+}
+
+export type DropClaimRow = {
+  id: number;
+  drop_id: number;
+  code: string;
+  claimed_at: string;
+  redeemed_at: string | null;
+  title: string;
+  prize_text: string;
+  kind: "prize" | "golden_ticket";
+  points: number;
+};
+
+export function listDropClaimsForUser(userId: number): DropClaimRow[] {
+  return getDb()
+    .prepare(
+      `SELECT c.id, c.drop_id, c.code, c.claimed_at, c.redeemed_at, d.title, d.prize_text, d.kind, d.points
+       FROM pueblo_drop_claims c JOIN pueblo_drops d ON d.id = c.drop_id
+       WHERE c.user_id = ? ORDER BY c.id DESC`
+    )
+    .all(userId) as DropClaimRow[];
+}
+
+export type DropClaimAdminRow = {
+  id: number;
+  drop_id: number;
+  code: string;
+  claimed_at: string;
+  redeemed_at: string | null;
+  username: string;
+  first_name: string | null;
+  last_name: string | null;
+};
+
+export function listClaimsForDrop(dropId: number): DropClaimAdminRow[] {
+  return getDb()
+    .prepare(
+      `SELECT c.id, c.drop_id, c.code, c.claimed_at, c.redeemed_at, u.username, u.first_name, u.last_name
+       FROM pueblo_drop_claims c JOIN users u ON u.id = c.user_id
+       WHERE c.drop_id = ? ORDER BY c.id DESC`
+    )
+    .all(dropId) as DropClaimAdminRow[];
+}
+
+export function setDropClaimRedeemed(claimId: number, redeemed: boolean): boolean {
+  const info = getDb()
+    .prepare("UPDATE pueblo_drop_claims SET redeemed_at = CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END WHERE id = ?")
+    .run(redeemed ? 1 : 0, claimId);
+  return Number(info.changes) > 0;
 }

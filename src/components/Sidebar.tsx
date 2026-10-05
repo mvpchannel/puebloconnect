@@ -75,6 +75,10 @@ export default function Sidebar() {
             <Link href="/pass" title="">Pueblo Pass</Link>
           </li>
           <li>
+            <i className="ti-gift" />
+            <Link href="/treasures" title="">My Treasures</Link>
+          </li>
+          <li>
             <i className="ti-id-badge" />
             <Link href="/passport" title="">Pueblo Passport</Link>
           </li>

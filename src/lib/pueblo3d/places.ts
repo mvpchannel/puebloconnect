@@ -153,3 +153,19 @@ export function getPlaceById(id: string): Place | undefined {
 export const LANDMARKS: Place[] = PLACES.filter((p) => !p.sample);
 // Placeholder businesses, shown only while no real business has a storefront.
 export const SAMPLE_BUSINESSES: Place[] = PLACES.filter((p) => p.sample);
+
+// Hiding spots for treasure drops: open ground away from every building,
+// tree and storefront lot (checked by a test against the building footprints).
+export const DROP_SPOTS: { id: string; label: string; x: number; z: number }[] = [
+  { id: "plaza", label: "Beside the plaza", x: 8, z: 6 },
+  { id: "north-trees", label: "By the north-west trees", x: -14, z: -14 },
+  { id: "main-east", label: "East end of Main Street", x: 75, z: 0 },
+  { id: "main-west", label: "West end of Main Street", x: -75, z: 0 },
+  { id: "behind-hq", label: "Behind Headquarters", x: -30, z: -48 },
+  { id: "behind-daily", label: "Behind The Daily Pueblo", x: 30, z: -48 },
+  { id: "north-field", label: "North field", x: 0, z: -70 },
+  { id: "south-lawn", label: "South lawn", x: 0, z: 45 },
+  { id: "between-shops", label: "Between the café and the market", x: 0, z: 28 },
+  { id: "nw-corner", label: "Far north-west corner", x: -80, z: -80 },
+  { id: "ne-corner", label: "Far north-east corner", x: 80, z: -80 },
+];

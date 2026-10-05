@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import styles from "./explore-3d.module.css";
 import type { Place } from "@/lib/pueblo3d/places";
-import type { CityEngine } from "@/lib/pueblo3d/engine";
+import type { CityEngine, DropMarker } from "@/lib/pueblo3d/engine";
 
 type SessionUser = { id: number; username: string; email: string; role: "member" | "admin" };
 
@@ -33,13 +33,15 @@ type MoveDir = "forward" | "backward" | "left" | "right";
  * lives in src/lib/pueblo3d/engine.ts, which this mounts into a plain div
  * ref inside a browser-only effect (avoids any SSR/WebGL mismatch).
  */
-export default function Explore3DClient({ places }: { places: Place[] }) {
+export default function Explore3DClient({ places, drops }: { places: Place[]; drops: DropMarker[] }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [userLoaded, setUserLoaded] = useState(false);
   const [ready, setReady] = useState(false);
   const [selectedPlace, setSelectedPlace] = useState<Place | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  // Result of clicking a treasure drop: a message, plus the prize and code when claimed.
+  const [dropResult, setDropResult] = useState<{ message: string; prize?: string; code?: string } | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<CityEngine | null>(null);
@@ -63,6 +65,30 @@ export default function Explore3DClient({ places }: { places: Place[] }) {
     };
   }, []);
 
+  const handleDropClick = useCallback(async (id: number, near: boolean) => {
+    if (!near) {
+      setDropResult({ message: "You found a treasure! Walk closer to pick it up." });
+      return;
+    }
+    try {
+      const res = await fetch(`/api/drops/${id}/claim`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.claimed) {
+        engineRef.current?.removeDrop(id);
+        setDropResult({
+          message: data.golden ? "You found a Golden Pueblo Ticket!" : "You found a treasure!",
+          prize: data.prize,
+          code: data.code,
+        });
+      } else {
+        if (data.reason && data.reason !== "inactive") engineRef.current?.removeDrop(id);
+        setDropResult({ message: data.error || "That treasure can't be claimed." });
+      }
+    } catch {
+      setDropResult({ message: "Couldn't reach the server. Try again." });
+    }
+  }, []);
+
   const handlePlaceClick = useCallback((place: Place) => {
     setSelectedPlace(place);
   }, []);
@@ -83,6 +109,8 @@ export default function Explore3DClient({ places }: { places: Place[] }) {
         onPlaceClick: handlePlaceClick,
         onReady: () => setReady(true),
         places,
+        drops,
+        onDropClick: handleDropClick,
       });
       engineRef.current = engine;
     });
@@ -194,6 +222,23 @@ export default function Explore3DClient({ places }: { places: Place[] }) {
               )}
               {selectedPlace.category === "business" && <Link href="/advertise">Advertise your business</Link>}
             </div>
+          </aside>
+        )}
+
+        {dropResult && (
+          <aside className={styles.panel}>
+            <button className={styles.closeBtn} type="button" aria-label="Close" onClick={() => setDropResult(null)}>
+              ×
+            </button>
+            <span className={styles.panelType}>TREASURE</span>
+            <h2>{dropResult.message}</h2>
+            {dropResult.prize && <p>{dropResult.prize}</p>}
+            {dropResult.code && (
+              <p className={styles.statusNote}>
+                Your code: <strong>{dropResult.code}</strong>. It&apos;s saved under{" "}
+                <Link href="/treasures">My Treasures</Link>. Show it to claim your prize.
+              </p>
+            )}
           </aside>
         )}
 
