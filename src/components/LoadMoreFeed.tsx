@@ -26,11 +26,14 @@ type Props = {
   currentUserId: number | null;
   isAdmin: boolean;
   viewerAvatar: string;
+  // Extra query string for a scoped list, e.g. "authorId=5" or
+  // "targetType=group&targetId=2". Omit for the global newsfeed.
+  scope?: string;
 };
 
 // Appends older newsfeed pages below the server-rendered first page,
 // via GET /api/feed (keyset-paginated — see listFeedPosts in db.ts).
-export default function LoadMoreFeed({ initialCursor, isLoggedIn, currentUserId, isAdmin, viewerAvatar }: Props) {
+export default function LoadMoreFeed({ initialCursor, isLoggedIn, currentUserId, isAdmin, viewerAvatar, scope }: Props) {
   const [cursor, setCursor] = useState(initialCursor);
   const [posts, setPosts] = useState<FeedPostJson[]>([]);
   const [loading, setLoading] = useState(false);
@@ -41,7 +44,7 @@ export default function LoadMoreFeed({ initialCursor, isLoggedIn, currentUserId,
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/feed?cursor=${encodeURIComponent(cursor)}`);
+      const res = await fetch(`/api/feed?cursor=${encodeURIComponent(cursor)}${scope ? `&${scope}` : ""}`);
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Couldn't load more posts.");

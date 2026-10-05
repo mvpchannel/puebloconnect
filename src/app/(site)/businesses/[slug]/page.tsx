@@ -6,6 +6,7 @@ import Footer from "@/components/Footer";
 import Sidebar from "@/components/Sidebar";
 import PostComposer from "@/components/PostComposer";
 import PostCard from "@/components/PostCard";
+import LoadMoreFeed from "@/components/LoadMoreFeed";
 import BusinessFollowButton from "@/components/BusinessFollowButton";
 import BusinessReviewsPanel from "@/components/BusinessReviewsPanel";
 import BusinessOwnerPanel from "@/components/BusinessOwnerPanel";
@@ -55,7 +56,11 @@ export default async function BusinessChannelPage({
   const viewerAvatar = viewerAvatarSrc(session?.sub ?? null);
   const isOwner = session ? isBusinessOwner(business.id, session.sub) : false;
   const isFollowing = session ? isFollowingBusiness(business.id, session.sub) : false;
-  const posts = listPosts(session?.sub ?? null, "business", business.id);
+  const postRows = listPosts(session?.sub ?? null, "business", business.id, 31);
+  const posts = postRows.slice(0, 30);
+  const lastPost = posts[posts.length - 1];
+  const nextCursor =
+    postRows.length > 30 && lastPost ? `${lastPost.created_at}|${lastPost.id}` : null;
   const reviews = listBusinessReviews(business.id);
   const menuItems = listBusinessMenuItems(business.id);
   const jobs = listBusinessJobs(business.id);
@@ -323,6 +328,14 @@ export default async function BusinessChannelPage({
                           isLoggedIn={Boolean(session)}
                         />
                       ))}
+                      <LoadMoreFeed
+                        initialCursor={nextCursor}
+                        isLoggedIn={Boolean(session)}
+                        currentUserId={session?.sub ?? null}
+                        isAdmin={session?.role === "admin"}
+                        viewerAvatar={viewerAvatar}
+                        scope={`targetType=business&targetId=${business.id}`}
+                      />
                     </div>
                   </div>
                 </div>

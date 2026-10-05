@@ -6,6 +6,7 @@ import Footer from "@/components/Footer";
 import Sidebar from "@/components/Sidebar";
 import PostComposer from "@/components/PostComposer";
 import PostCard from "@/components/PostCard";
+import LoadMoreFeed from "@/components/LoadMoreFeed";
 import EventRsvpPanel from "@/components/EventRsvpPanel";
 import { getCurrentUser } from "@/lib/require-user";
 import { viewerAvatarSrc } from "@/lib/viewer";
@@ -55,7 +56,11 @@ export default async function EventDetailPage({
   const checkedIn = session ? isCheckedIn(event.id, session.sub) : false;
   const attendees = listEventAttendees(event.id, 20);
   const checkins = listEventCheckins(event.id, 20);
-  const posts = listPosts(session?.sub ?? null, "event", event.id);
+  const postRows = listPosts(session?.sub ?? null, "event", event.id, 31);
+  const posts = postRows.slice(0, 30);
+  const lastPost = posts[posts.length - 1];
+  const nextCursor =
+    postRows.length > 30 && lastPost ? `${lastPost.created_at}|${lastPost.id}` : null;
 
   return (
     <>
@@ -191,6 +196,14 @@ export default async function EventDetailPage({
                           isLoggedIn={Boolean(session)}
                         />
                       ))}
+                      <LoadMoreFeed
+                        initialCursor={nextCursor}
+                        isLoggedIn={Boolean(session)}
+                        currentUserId={session?.sub ?? null}
+                        isAdmin={session?.role === "admin"}
+                        viewerAvatar={viewerAvatar}
+                        scope={`targetType=event&targetId=${event.id}`}
+                      />
                     </div>
                   </div>
                 </div>

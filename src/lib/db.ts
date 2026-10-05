@@ -1795,22 +1795,32 @@ export function getPostById(postId: number, viewerId: number | null): PostWithAu
 // Default target: the general newsfeed (target_type='feed', target_id
 // NULL). Passing a different target_type/target_id lists a group's,
 // business's, or event's wall instead, once those features exist.
+export type PostCursor = { createdAt: string; id: number };
+
+function postCursorSql(before: PostCursor | null): { sql: string; params: (string | number)[] } {
+  return before
+    ? { sql: "AND (p.created_at < ? OR (p.created_at = ? AND p.id < ?))", params: [before.createdAt, before.createdAt, before.id] }
+    : { sql: "", params: [] };
+}
+
 export function listPosts(
   viewerId: number | null,
   targetType: TargetType = "feed",
   targetId: number | null = null,
-  limit = 30
+  limit = 30,
+  before: PostCursor | null = null
 ): PostWithAuthor[] {
   const db = getDb();
   const targetClause =
     targetId === null ? "p.target_type = ? AND p.target_id IS NULL" : "p.target_type = ? AND p.target_id = ?";
   const params: (string | number)[] =
     targetId === null ? [viewerId ?? 0, targetType] : [viewerId ?? 0, targetType, targetId];
+  const cur = postCursorSql(before);
   return db
     .prepare(
-      `${POST_SELECT} WHERE p.deleted_at IS NULL AND ${targetClause} ORDER BY p.created_at DESC LIMIT ?`
+      `${POST_SELECT} WHERE p.deleted_at IS NULL AND ${targetClause} ${cur.sql} ORDER BY p.created_at DESC, p.id DESC LIMIT ?`
     )
-    .all(...params, limit) as PostWithAuthor[];
+    .all(...params, ...cur.params, limit) as PostWithAuthor[];
 }
 
 // The global newsfeed: every member post, wherever it was made (the main
@@ -1863,14 +1873,16 @@ export function listFeedPosts(
 export function listPostsByAuthor(
   viewerId: number | null,
   authorId: number,
-  limit = 30
+  limit = 30,
+  before: PostCursor | null = null
 ): PostWithAuthor[] {
   const db = getDb();
+  const cur = postCursorSql(before);
   return db
     .prepare(
-      `${POST_SELECT} WHERE p.deleted_at IS NULL AND p.author_id = ? ORDER BY p.created_at DESC LIMIT ?`
+      `${POST_SELECT} WHERE p.deleted_at IS NULL AND p.author_id = ? ${cur.sql} ORDER BY p.created_at DESC, p.id DESC LIMIT ?`
     )
-    .all(viewerId ?? 0, authorId, limit) as PostWithAuthor[];
+    .all(viewerId ?? 0, authorId, ...cur.params, limit) as PostWithAuthor[];
 }
 
 export function softDeletePost(postId: number): void {

@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import Sidebar from "@/components/Sidebar";
 import PostComposer from "@/components/PostComposer";
 import PostCard from "@/components/PostCard";
+import LoadMoreFeed from "@/components/LoadMoreFeed";
 import ProfileActions from "@/components/ProfileActions";
 import ProfileImageEditor from "@/components/ProfileImageEditor";
 import { getCurrentUser } from "@/lib/require-user";
@@ -39,7 +40,11 @@ export default async function MemberProfilePage({ params }: Props) {
   const session = await getCurrentUser();
   const viewerAvatar = viewerAvatarSrc(session?.sub ?? null);
   const isOwner = session?.sub === targetId;
-  const posts = listPostsByAuthor(session?.sub ?? null, targetId);
+  const postRows = listPostsByAuthor(session?.sub ?? null, targetId, 31);
+  const posts = postRows.slice(0, 30);
+  const lastPost = posts[posts.length - 1];
+  const nextCursor =
+    postRows.length > 30 && lastPost ? `${lastPost.created_at}|${lastPost.id}` : null;
   const friendCount = listFriends(targetId).length;
   const displayName =
     [profileUser.first_name, profileUser.last_name].filter(Boolean).join(" ") || profileUser.username;
@@ -170,6 +175,14 @@ export default async function MemberProfilePage({ params }: Props) {
                           isLoggedIn={Boolean(session)}
                         />
                       ))}
+                      <LoadMoreFeed
+                        initialCursor={nextCursor}
+                        isLoggedIn={Boolean(session)}
+                        currentUserId={session?.sub ?? null}
+                        isAdmin={session?.role === "admin"}
+                        viewerAvatar={viewerAvatar}
+                        scope={`authorId=${targetId}`}
+                      />
                     </div>
                   </div>
                 </div>

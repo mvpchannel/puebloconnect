@@ -5,6 +5,7 @@ import Footer from "@/components/Footer";
 import Sidebar from "@/components/Sidebar";
 import PostComposer from "@/components/PostComposer";
 import PostCard from "@/components/PostCard";
+import LoadMoreFeed from "@/components/LoadMoreFeed";
 import GroupJoinButton from "@/components/GroupJoinButton";
 import { getCurrentUser } from "@/lib/require-user";
 import { viewerAvatarSrc } from "@/lib/viewer";
@@ -34,7 +35,11 @@ export default async function GroupDetailPage({
   const session = await getCurrentUser();
   const viewerAvatar = viewerAvatarSrc(session?.sub ?? null);
   const role = session ? getGroupMemberRole(group.id, session.sub) : null;
-  const posts = listPosts(session?.sub ?? null, "group", group.id);
+  const postRows = listPosts(session?.sub ?? null, "group", group.id, 31);
+  const posts = postRows.slice(0, 30);
+  const lastPost = posts[posts.length - 1];
+  const nextCursor =
+    postRows.length > 30 && lastPost ? `${lastPost.created_at}|${lastPost.id}` : null;
   const members = listGroupMembers(group.id, 12);
   const tags = parseTags(group.tags);
 
@@ -165,6 +170,14 @@ export default async function GroupDetailPage({
                           isLoggedIn={Boolean(session)}
                         />
                       ))}
+                      <LoadMoreFeed
+                        initialCursor={nextCursor}
+                        isLoggedIn={Boolean(session)}
+                        currentUserId={session?.sub ?? null}
+                        isAdmin={session?.role === "admin"}
+                        viewerAvatar={viewerAvatar}
+                        scope={`targetType=group&targetId=${group.id}`}
+                      />
                     </div>
                   </div>
                 </div>
