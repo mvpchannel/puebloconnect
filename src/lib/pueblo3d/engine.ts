@@ -209,6 +209,53 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     const door = box(2.5, 4, 0.12, 0x3a2b25, p.x, 2, frontZ + 0.08);
     door.userData.place = p;
     clickable.push(door);
+    if (p.billboard) {
+      // Rooftop billboard facing the street (+z), mounted on two posts.
+      const bw = 14;
+      const bh = 6;
+      const by = p.height + 3.4;
+      const bz = p.z + p.depth / 2 - 1.2;
+      box(0.4, 3.4, 0.4, 0x333333, p.x - bw / 2 + 1.5, p.height + 1.7, bz);
+      box(0.4, 3.4, 0.4, 0x333333, p.x + bw / 2 - 1.5, p.height + 1.7, bz);
+      box(bw + 0.6, bh + 0.6, 0.3, 0x1a1a1a, p.x, by, bz);
+      const c = document.createElement("canvas");
+      c.width = 560;
+      c.height = 240;
+      const g = c.getContext("2d")!;
+      g.fillStyle = "#101820";
+      g.fillRect(0, 0, c.width, c.height);
+      g.fillStyle = "#ffffff";
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.font = "bold 44px Arial";
+      // wrap the headline onto at most two lines
+      const words = p.billboard.headline.split(/\s+/);
+      const lines: string[] = [];
+      let cur = "";
+      for (const w of words) {
+        const next = cur ? `${cur} ${w}` : w;
+        if (cur && g.measureText(next).width > c.width - 50) {
+          lines.push(cur);
+          cur = w;
+        } else cur = next;
+      }
+      if (cur) lines.push(cur);
+      const shown = lines.slice(0, 2);
+      const top = p.billboard.detail ? 70 : c.height / 2 - (shown.length - 1) * 28;
+      shown.forEach((ln, i) => g.fillText(ln, c.width / 2, top + i * 56));
+      if (p.billboard.detail) {
+        g.fillStyle = "#f4c542";
+        g.font = "bold 40px Arial";
+        g.fillText(p.billboard.detail, c.width / 2, c.height - 50);
+      }
+      const bTex = track(new THREE.CanvasTexture(c));
+      bTex.colorSpace = THREE.SRGBColorSpace;
+      const face = new THREE.Mesh(track(new THREE.PlaneGeometry(bw, bh)), track(new THREE.MeshBasicMaterial({ map: bTex })));
+      face.position.set(p.x, by, bz + 0.2);
+      face.userData.place = p;
+      scene.add(face);
+      clickable.push(face);
+    }
     const sign = makeLabel(p.name);
     sign.position.set(p.x, p.height + 2, p.z);
     scene.add(sign);

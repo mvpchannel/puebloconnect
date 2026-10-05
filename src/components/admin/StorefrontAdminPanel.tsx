@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Row = { id: number; name: string; category: string; lot: number | null; color: string };
+type Row = { id: number; name: string; category: string; lot: number | null; color: string; billboard: string };
 
 export default function StorefrontAdminPanel({ rows, totalLots }: { rows: Row[]; totalLots: number }) {
   const router = useRouter();
   const [colors, setColors] = useState<Record<number, string>>(() => Object.fromEntries(rows.map((r) => [r.id, r.color])));
+  const [boards, setBoards] = useState<Record<number, string>>(() => Object.fromEntries(rows.map((r) => [r.id, r.billboard])));
   const [error, setError] = useState<string | null>(null);
   const used = rows.filter((r) => r.lot !== null).length;
 
@@ -16,7 +17,7 @@ export default function StorefrontAdminPanel({ rows, totalLots }: { rows: Row[];
     const res = await fetch(`/api/admin/storefronts/${id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ enabled, color: colors[id] }),
+      body: JSON.stringify({ enabled, color: colors[id], billboardText: enabled ? boards[id] ?? "" : undefined }),
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
@@ -37,7 +38,7 @@ export default function StorefrontAdminPanel({ rows, totalLots }: { rows: Row[];
       ) : (
         <table className="table">
           <thead>
-            <tr><th>Business</th><th>Storefront</th><th>Color</th><th /></tr>
+            <tr><th>Business</th><th>Storefront</th><th>Color</th><th>Billboard headline</th><th /></tr>
           </thead>
           <tbody>
             {rows.map((r) => (
@@ -55,12 +56,24 @@ export default function StorefrontAdminPanel({ rows, totalLots }: { rows: Row[];
                     aria-label={`Building color for ${r.name}`}
                   />
                 </td>
+                <td style={{ minWidth: 200 }}>
+                  {r.lot !== null && (
+                    <input
+                      className="form-control"
+                      maxLength={60}
+                      placeholder="Blank = show current deal"
+                      value={boards[r.id] ?? ""}
+                      onChange={(e) => setBoards((b) => ({ ...b, [r.id]: e.target.value }))}
+                      aria-label={`Billboard headline for ${r.name}`}
+                    />
+                  )}
+                </td>
                 <td style={{ whiteSpace: "nowrap" }}>
                   {r.lot === null ? (
                     <button className="btn btn-primary btn-sm" onClick={() => save(r.id, true)}>Add to 3D Pueblo</button>
                   ) : (
                     <>
-                      <button className="btn btn-default btn-sm" onClick={() => save(r.id, true)}>Save color</button>{" "}
+                      <button className="btn btn-default btn-sm" onClick={() => save(r.id, true)}>Save</button>{" "}
                       <button className="btn btn-danger btn-sm" onClick={() => save(r.id, false)}>Remove</button>
                     </>
                   )}

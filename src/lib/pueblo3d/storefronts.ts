@@ -9,7 +9,11 @@ export type StorefrontInput = {
   description: string | null;
   storefront_lot: number;
   storefront_color: string | null;
+  billboard_text?: string | null;
 };
+
+/** A business's current live deal, used for the billboard when no custom headline is set. */
+export type BillboardDeal = { title: string; discount_text: string } | null;
 
 // One row of lots along z = 62, centered on x = 0. The row sits in front of the
 // existing buildings, and the "Walk here" spot (z + depth/2 + 7 = 75) stays
@@ -23,7 +27,19 @@ export function parseHexColor(hex: string | null): number {
   return parseInt((m ? m[1] : DEFAULT_STOREFRONT_COLOR.slice(1)), 16);
 }
 
-export function storefrontToPlace(b: StorefrontInput): Place {
+// Billboard content: the admin-set headline if there is one, otherwise the
+// business's current active deal, otherwise no billboard at all (never filler).
+export function billboardFor(
+  customText: string | null | undefined,
+  deal: BillboardDeal
+): { headline: string; detail?: string } | undefined {
+  const custom = (customText ?? "").trim();
+  if (custom) return { headline: custom.slice(0, 60) };
+  if (deal) return { headline: deal.title.slice(0, 60), detail: deal.discount_text.slice(0, 40) };
+  return undefined;
+}
+
+export function storefrontToPlace(b: StorefrontInput, deal: BillboardDeal = null): Place {
   const desc = (b.description ?? "").trim();
   return {
     id: `biz-${b.id}`,
@@ -39,5 +55,6 @@ export function storefrontToPlace(b: StorefrontInput): Place {
     color: parseHexColor(b.storefront_color),
     href: `/businesses/${b.slug}`,
     hrefLabel: "Open business page",
+    billboard: billboardFor(b.billboard_text, deal),
   };
 }

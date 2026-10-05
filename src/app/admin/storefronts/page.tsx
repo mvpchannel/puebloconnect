@@ -17,7 +17,7 @@ export default function StorefrontsAdminPage() {
         <p style={{ color: "#888", marginBottom: 20 }}>
           A business added here gets a building in Explore the Pueblo in 3D that opens its business page. While no
           business has a storefront, the 3D Pueblo shows labeled sample buildings instead. Each storefront takes one of
-          {" "}{STOREFRONT_LOTS} lots.
+          {" "}{STOREFRONT_LOTS} lots. A storefront shows a rooftop billboard: the headline you set here, or else the business's current deal if it has one, or no billboard.
         </p>
         <StorefrontAdminPanel
           totalLots={STOREFRONT_LOTS}
@@ -27,6 +27,7 @@ export default function StorefrontsAdminPage() {
             category: b.category,
             lot: b.storefront_lot,
             color: b.storefront_color ?? DEFAULT_STOREFRONT_COLOR,
+            billboard: b.billboard_text ?? "",
           }))}
         />
       </div>

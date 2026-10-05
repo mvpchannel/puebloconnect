@@ -3,7 +3,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Explore3DClient from "./Explore3DClient";
 import PassportVisitBeacon from "@/components/PassportVisitBeacon";
-import { listStorefronts } from "@/lib/db";
+import { listStorefronts, listActiveDealsForBusiness } from "@/lib/db";
 import { LANDMARKS, SAMPLE_BUSINESSES } from "@/lib/pueblo3d/places";
 import { storefrontToPlace } from "@/lib/pueblo3d/storefronts";
 
@@ -22,9 +22,10 @@ export const dynamic = "force-dynamic";
 // Real businesses that an admin has given a 3D storefront replace the sample
 // buildings; with none, the sample set is shown (and labeled as sample).
 export default function Explore3DPage() {
-  const storefronts = listStorefronts().map((b) =>
-    storefrontToPlace({ ...b, storefront_lot: b.storefront_lot as number })
-  );
+  const storefronts = listStorefronts().map((b) => {
+    const deal = listActiveDealsForBusiness(b.id)[0] ?? null;
+    return storefrontToPlace({ ...b, storefront_lot: b.storefront_lot as number }, deal);
+  });
   const places = [...LANDMARKS, ...(storefronts.length > 0 ? storefronts : SAMPLE_BUSINESSES)];
   return (
     <>

@@ -36,6 +36,8 @@ export type Place = {
    */
   href?: string;
   hrefLabel?: string;
+  /** Rooftop billboard text, drawn by the engine when present. */
+  billboard?: { headline: string; detail?: string };
   /** True for illustrative placeholder buildings that are not real businesses. */
   sample?: boolean;
 };

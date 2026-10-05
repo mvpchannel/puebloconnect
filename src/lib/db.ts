@@ -633,6 +633,10 @@ function getDb(): DatabaseSync {
 
     // 360° Virtual Business Tours: an admin-attached tour link (validated
     // against an allowlist; see src/lib/tour-url.ts) and its derived embed address.
+    // Pueblo 3D Advertising: optional headline for the storefront's rooftop billboard.
+    if (!columnExists(db, "businesses", "billboard_text")) {
+      db.exec("ALTER TABLE businesses ADD COLUMN billboard_text TEXT");
+    }
     for (const col of ["tour_url", "tour_provider", "tour_embed"]) {
       if (!columnExists(db, "businesses", col)) db.exec(`ALTER TABLE businesses ADD COLUMN ${col} TEXT`);
     }
@@ -6170,9 +6174,10 @@ export type StorefrontBusiness = {
   description: string | null;
   storefront_lot: number | null;
   storefront_color: string | null;
+  billboard_text: string | null;
 };
 
-const STOREFRONT_COLUMNS = "id, name, slug, category, description, storefront_lot, storefront_color";
+const STOREFRONT_COLUMNS = "id, name, slug, category, description, storefront_lot, storefront_color, billboard_text";
 
 // Every business with its storefront state, for the admin screen.
 export function listBusinessesWithStorefrontState(): StorefrontBusiness[] {
@@ -6212,7 +6217,15 @@ export function enableStorefront(businessId: number, color: string): { ok: true;
 }
 
 export function disableStorefront(businessId: number): void {
-  getDb().prepare("UPDATE businesses SET storefront_lot = NULL, storefront_color = NULL WHERE id = ?").run(businessId);
+  getDb().prepare("UPDATE businesses SET storefront_lot = NULL, storefront_color = NULL, billboard_text = NULL WHERE id = ?").run(businessId);
+}
+
+// Sets (or clears, with null) the headline on a storefront's rooftop billboard.
+export function setStorefrontBillboard(businessId: number, text: string | null): boolean {
+  const info = getDb()
+    .prepare("UPDATE businesses SET billboard_text = ? WHERE id = ? AND storefront_lot IS NOT NULL")
+    .run(text, businessId);
+  return Number(info.changes) > 0;
 }
 
 
