@@ -3,7 +3,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Explore3DClient from "./Explore3DClient";
 import PassportVisitBeacon from "@/components/PassportVisitBeacon";
-import { listStorefronts, listActiveDealsForBusiness, listFindableDrops } from "@/lib/db";
+import { listStorefronts, listActiveDealsForBusiness, listFindableDrops, listStreams } from "@/lib/db";
 import { getCurrentUser } from "@/lib/require-user";
 import { LANDMARKS, SAMPLE_BUSINESSES } from "@/lib/pueblo3d/places";
 import { storefrontToPlace } from "@/lib/pueblo3d/storefronts";
@@ -31,6 +31,10 @@ export default async function Explore3DPage() {
   const drops = session
     ? listFindableDrops(session.sub).map((d) => ({ id: d.id, x: d.x, z: d.z, golden: d.kind === "golden_ticket" }))
     : [];
+  const live = listStreams("live", session?.sub ?? null, 1)[0];
+  const screen = live
+    ? { headline: "● LIVE NOW", status: live.title }
+    : { headline: "PUEBLO LIVE", status: "No broadcast right now" };
   const places = [...LANDMARKS, ...(storefronts.length > 0 ? storefronts : SAMPLE_BUSINESSES)];
   return (
     <>
@@ -41,7 +45,7 @@ export default async function Explore3DPage() {
         refId={null}
         label="Explored the Pueblo in 3D"
       />
-      <Explore3DClient places={places} drops={drops} />
+      <Explore3DClient places={places} drops={drops} screen={screen} />
       <Footer />
     </>
   );

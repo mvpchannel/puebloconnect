@@ -50,6 +50,8 @@ export type CityEngineOptions = {
   onReady?: () => void;
   /** Buildings to place. Defaults to the built-in sample set. */
   places?: Place[];
+  /** Text for the plaza screen: a headline and a status line (e.g. the current live broadcast). */
+  screen?: { headline: string; status: string };
   /** Treasure drops to show as glowing objects the member can find and click. */
   drops?: DropMarker[];
   /** Called when a drop is clicked; `near` is whether the avatar is close enough to grab it. */
@@ -156,24 +158,25 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     scene.add(crown);
   }
 
-  // Decorative "Pueblo Live" screen prop near the plaza. Purely a static
-  // 3D object with a drawn-on placeholder texture — it is not wired to any
-  // real video stream. See FUNCTIONALITY_STATUS.md: Pueblo Live doesn't
-  // exist yet as a feature.
+  // Plaza screen. It is a drawn sign, not a video player: the page passes in
+  // what is on Pueblo Live right now (or says nothing is), and viewers go to
+  // /live to actually watch.
   {
     const screenCanvas = document.createElement("canvas");
     screenCanvas.width = 512;
     screenCanvas.height = 288;
     const ctx = screenCanvas.getContext("2d")!;
+    const screenInfo = opts.screen ?? { headline: "PUEBLO LIVE", status: "Watch at pueblo.connect/live" };
     ctx.fillStyle = "#101820";
     ctx.fillRect(0, 0, screenCanvas.width, screenCanvas.height);
     ctx.fillStyle = "#ffffff";
     ctx.font = "bold 32px Arial";
     ctx.textAlign = "center";
-    ctx.fillText("PUEBLO LIVE", screenCanvas.width / 2, screenCanvas.height / 2 - 10);
+    ctx.fillText(screenInfo.headline, screenCanvas.width / 2, screenCanvas.height / 2 - 10);
     ctx.font = "20px Arial";
     ctx.fillStyle = "#9fb0c0";
-    ctx.fillText("Coming soon", screenCanvas.width / 2, screenCanvas.height / 2 + 24);
+    const status = screenInfo.status.length > 38 ? `${screenInfo.status.slice(0, 37)}…` : screenInfo.status;
+    ctx.fillText(status, screenCanvas.width / 2, screenCanvas.height / 2 + 24);
     const screenTex = track(new THREE.CanvasTexture(screenCanvas));
     const frameGeo = track(new THREE.BoxGeometry(10, 5.6, 0.4));
     const frameMat = track(new THREE.MeshStandardMaterial({ color: 0x1a1a1a }));

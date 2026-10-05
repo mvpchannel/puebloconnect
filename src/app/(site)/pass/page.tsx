@@ -86,6 +86,10 @@ export default async function PassPage() {
                 </div>
 
                 <div className="central-meta item" style={{ padding: 20 }}>
+                  <p style={{ color: "#555", fontSize: 14 }}>
+                    Your <strong>Pass</strong> is your membership card. Your <Link href="/passport">Passport</Link> is where
+                    you collect stamps for places you visit.
+                  </p>
                   <h5>What you can use today</h5>
                   <ul style={{ paddingLeft: 20 }}>
                     <li><Link href="/deals">Pueblo Deals</Link> — local offers you can claim</li>

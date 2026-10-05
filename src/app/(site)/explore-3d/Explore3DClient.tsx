@@ -33,7 +33,15 @@ type MoveDir = "forward" | "backward" | "left" | "right";
  * lives in src/lib/pueblo3d/engine.ts, which this mounts into a plain div
  * ref inside a browser-only effect (avoids any SSR/WebGL mismatch).
  */
-export default function Explore3DClient({ places, drops }: { places: Place[]; drops: DropMarker[] }) {
+export default function Explore3DClient({
+  places,
+  drops,
+  screen,
+}: {
+  places: Place[];
+  drops: DropMarker[];
+  screen: { headline: string; status: string };
+}) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [userLoaded, setUserLoaded] = useState(false);
   const [ready, setReady] = useState(false);
@@ -110,6 +118,7 @@ export default function Explore3DClient({ places, drops }: { places: Place[]; dr
         onReady: () => setReady(true),
         places,
         drops,
+        screen,
         onDropClick: handleDropClick,
       });
       engineRef.current = engine;
