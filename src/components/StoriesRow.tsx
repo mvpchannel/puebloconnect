@@ -26,6 +26,9 @@ export default function StoriesRow({ groups, isLoggedIn, currentUserId, isAdmin,
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<{ g: number; s: number } | null>(null);
+  // A chosen photo waiting for an optional caption before it is posted.
+  const [draft, setDraft] = useState<string | null>(null);
+  const [caption, setCaption] = useState("");
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -38,20 +41,35 @@ export default function StoriesRow({ groups, isLoggedIn, currentUserId, isAdmin,
     setBusy(true);
     setError(null);
     try {
-      const imageDataUrl = await compressImageFile(file, 1080);
+      setDraft(await compressImageFile(file, 1080));
+      setCaption("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't read that photo.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function shareDraft() {
+    if (!draft) return;
+    setBusy(true);
+    setError(null);
+    try {
       const res = await fetch("/api/stories", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageDataUrl }),
+        body: JSON.stringify({ imageDataUrl: draft, caption }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setError(data.error || "Couldn't add your story.");
         return;
       }
+      setDraft(null);
+      setCaption("");
       router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't reach the server.");
+    } catch {
+      setError("Couldn't reach the server.");
     } finally {
       setBusy(false);
     }
@@ -145,7 +163,7 @@ export default function StoriesRow({ groups, isLoggedIn, currentUserId, isAdmin,
                 <i className="fa fa-plus" />
               </span>
               <span style={{ position: "absolute", bottom: 10, left: 0, right: 0, fontSize: 13, fontWeight: 600, color: "#222" }}>
-                {busy ? "Posting…" : "Create story"}
+                {busy && !draft ? "Loading…" : "Create story"}
               </span>
             </button>
           )}
@@ -186,6 +204,46 @@ export default function StoriesRow({ groups, isLoggedIn, currentUserId, isAdmin,
         )}
         {error && <p role="alert" style={{ color: "#c0392b", fontSize: 13, margin: "8px 4px 0" }}>{error}</p>}
       </div>
+
+      {draft && (
+        <div
+          role="dialog"
+          aria-label="New story"
+          style={{ position: "fixed", inset: 0, zIndex: 100000, background: "rgba(0,0,0,.92)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+        >
+          <div style={{ width: "min(420px, 100%)", background: "#fff", borderRadius: 12, overflow: "hidden" }}>
+            <div style={{ position: "relative", background: "#000" }}>
+              <img src={draft} alt="Story preview" style={{ width: "100%", maxHeight: "60vh", objectFit: "contain", display: "block" }} />
+              {caption && (
+                <p style={{ position: "absolute", left: 0, right: 0, bottom: 0, margin: 0, padding: "30px 14px 12px", color: "#fff", textAlign: "center", background: "linear-gradient(transparent, rgba(0,0,0,.7))" }}>
+                  {caption}
+                </p>
+              )}
+            </div>
+            <div style={{ padding: 14 }}>
+              <input
+                type="text"
+                value={caption}
+                maxLength={200}
+                onChange={(e) => setCaption(e.target.value)}
+                placeholder="Add a caption (optional)"
+                aria-label="Story caption"
+                style={{ width: "100%", padding: "8px 12px", border: "1px solid #ddd", borderRadius: 6, marginBottom: 6 }}
+              />
+              <div style={{ fontSize: 12, color: "#999", textAlign: "right", marginBottom: 8 }}>{caption.length}/200 · stays up for 24 hours</div>
+              {error && <p role="alert" style={{ color: "#c0392b", fontSize: 13, margin: "0 0 8px" }}>{error}</p>}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                <button type="button" className="mtr-btn signin" onClick={() => { setDraft(null); setError(null); }} disabled={busy}>
+                  <span>Cancel</span>
+                </button>
+                <button type="button" className="mtr-btn signup" onClick={shareDraft} disabled={busy}>
+                  <span>{busy ? "Posting…" : "Share story"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {open && cur && story && (
         <div
