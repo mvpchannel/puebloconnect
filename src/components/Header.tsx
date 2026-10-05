@@ -237,6 +237,7 @@ export default function Header() {
               <span>Timeline</span>
               <ul>
                 <li><Link href="/profile" title="">Timeline</Link></li>
+                <li><Link href="/about" title="">About Pueblo Connect</Link></li>
                 <li><Link href="/terms" title="">Terms &amp; conditions</Link></li>
                 <li><Link href="/sitemap-page" title="">Sitemap</Link></li>
               </ul>
@@ -292,6 +293,7 @@ export default function Header() {
                 <li><Link href="/explore-3d" title="">Explore the Pueblo in 3D</Link></li>
                 <li><Link href="/membership" title="">Business Membership</Link></li>
                 <li><Link href="/advertise" title="">Advertise</Link></li>
+                <li><Link href="/about" title="">About Pueblo Connect</Link></li>
                 <li><Link href="/terms" title="">Terms &amp; conditions</Link></li>
                 <li><Link href="/sitemap-page" title="">Sitemap</Link></li>
               </ul>

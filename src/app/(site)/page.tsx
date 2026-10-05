@@ -132,6 +132,9 @@ export default async function LandingPage() {
           <Link href="/login" title="" className="secondary">
             Sign In
           </Link>
+          <Link href="/about" title="" className="secondary">
+            What is Pueblo Connect?
+          </Link>
         </div>
 
         <div className="landing-stats">

@@ -142,7 +142,7 @@ function LoginForm() {
               <h1>Pueblo Connect&nbsp;</h1>
               <p>Connect Local. Shop Local. Grow Together.</p>
               <Link
-                href="/"
+                href="/about"
                 title=""
                 style={{ color: "#fff", textDecoration: "underline", fontSize: 14 }}
               >

@@ -2,13 +2,22 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-import Sidebar from "@/components/Sidebar";
+import { INTRO, FLOW, FLOW_NOTE, GROUPS, type Status } from "./about-content";
 
 export const metadata: Metadata = {
-  title: "About",
+  title: "About Pueblo Connect",
+  description:
+    "Pueblo Connect is the digital town square for our community — residents, local businesses, events, deals and news in one place.",
 };
 
-// Ported from winku-html/about.html. The original vendor page is really a
+const STATUS_LABEL: Record<Status, { text: string; color: string }> = {
+  live: { text: "Live", color: "#1f9d55" },
+  prototype: { text: "Prototype", color: "#d98c00" },
+  soon: { text: "Coming soon", color: "#7b8794" },
+};
+
+// Public "what is Pueblo Connect" page (mission + every program, tagged
+// Live / Prototype / Coming soon from ./about-content.ts). Originally ported from winku-html/about.html. The original vendor page is really a
 // demo "profile" page with its "about" tab selected (fake work/education at
 // "Envato", football/photography interests, Oxford/Harvard degrees, a fake
 // follower/likes count, a "who's following" friend list) — none of that is
@@ -44,10 +53,7 @@ export default function AboutPage() {
         <div className="gap gray-bg">
           <div className="container">
             <div className="row" id="page-contents">
-              <div className="col-lg-3">
-                <Sidebar />
-              </div>
-              <div className="col-lg-9">
+              <div className="col-lg-10 offset-lg-1">
                 <div className="central-meta">
                   <div className="about">
                     <div className="personal">
@@ -64,6 +70,64 @@ export default function AboutPage() {
                         Pueblo&mdash;in print, online, and in the community.
                       </p>
                     </div>
+                    <div className="personal">
+                      <h5 className="f-title"><i className="ti-home" /> What is Pueblo Connect?</h5>
+                      {INTRO.map((p, i) => (
+                        <p key={i}>{p}</p>
+                      ))}
+                      <p style={{ marginBottom: 0 }}>
+                        <Link className="mtr-btn signup" href="/login?register=1" title="">
+                          <span>Join Pueblo Connect — it&rsquo;s free</span>
+                        </Link>
+                      </p>
+                    </div>
+                    <div className="personal">
+                      <h5 className="f-title"><i className="ti-layout-grid2" /> How it all connects</h5>
+                      <p style={{ fontWeight: 600 }}>{FLOW}</p>
+                      <p>{FLOW_NOTE}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {GROUPS.map((group) => (
+                  <div className="central-meta" key={group.title} style={{ marginTop: 20 }}>
+                    <div className="about">
+                      <div className="personal">
+                        <h5 className="f-title"><i className={group.icon} /> {group.title}</h5>
+                        <div className="row">
+                          {group.programs.map((prog) => {
+                            const st = STATUS_LABEL[prog.status];
+                            const inner = (
+                              <>
+                                <h6 style={{ marginBottom: 6 }}>
+                                  {prog.name}{" "}
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: st.color, borderRadius: 10, padding: "2px 8px", verticalAlign: "middle", whiteSpace: "nowrap" }}>
+                                    {st.text}
+                                  </span>
+                                </h6>
+                                <p style={{ margin: 0, color: "#555", fontSize: 14 }}>{prog.description}</p>
+                              </>
+                            );
+                            return (
+                              <div className="col-md-6" key={prog.name} style={{ marginBottom: 18 }}>
+                                {prog.href ? (
+                                  <Link href={prog.href} title="" style={{ display: "block", color: "inherit" }}>
+                                    {inner}
+                                  </Link>
+                                ) : (
+                                  <div>{inner}</div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+
+                <div className="central-meta" style={{ marginTop: 20 }}>
+                  <div className="about">
                     <div className="personal">
                       <h5 className="f-title"><i className="ti-location-pin" /> Basic info</h5>
                       <ul className="basics">
