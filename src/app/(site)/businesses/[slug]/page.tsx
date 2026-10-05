@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PLACEHOLDER } from "@/lib/placeholders";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import Header from "@/components/Header";
@@ -94,7 +95,7 @@ export default async function BusinessChannelPage({
       <section>
         <div className="feature-photo">
           <figure>
-            <img src="/images/resources/timeline-1.jpg" alt="" />
+            <img src={business.cover_photo_path || PLACEHOLDER.businessCover} alt="" />
           </figure>
           <div className="container-fluid">
             <div className="row merged">

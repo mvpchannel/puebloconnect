@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PLACEHOLDER } from "@/lib/placeholders";
 import Link from "next/link";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -85,9 +86,7 @@ export default async function ClassifiedsPage({
                 {items.map((c) => (
                   <div className="central-meta item" key={c.id}>
                     <Link href={`/classifieds/${c.id}`} title="" style={{ display: "flex", gap: 14, padding: "14px 16px", color: "inherit" }}>
-                      {c.image_path && (
-                        <img src={c.image_path} alt="" style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 6, flex: "0 0 96px" }} />
-                      )}
+                      <img src={c.image_path || PLACEHOLDER.classified} alt="" style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 6, flex: "0 0 96px" }} />
                       <div style={{ minWidth: 0 }}>
                         <h4 style={{ marginBottom: 2 }}>
                           {c.title}

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PLACEHOLDER } from "@/lib/placeholders";
 import { notFound } from "next/navigation";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -49,7 +50,7 @@ export default async function GroupDetailPage({
       <section>
         <div className="feature-photo">
           <figure>
-            <img src="/images/resources/timeline-1.jpg" alt="" />
+            <img src={group.cover_photo_path || PLACEHOLDER.groupCover} alt="" />
           </figure>
           <div className="container-fluid">
             <div className="row merged">

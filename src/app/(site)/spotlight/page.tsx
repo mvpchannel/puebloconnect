@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PLACEHOLDER } from "@/lib/placeholders";
 import Link from "next/link";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -45,9 +46,7 @@ export default function SpotlightIndexPage() {
                 {items.map((s) => (
                   <div className="central-meta item" key={s.id}>
                     <Link href={`/spotlight/${s.slug}`} title="" style={{ display: "block", color: "inherit" }}>
-                      {s.hero_image_path && (
-                        <img src={s.hero_image_path} alt="" style={{ width: "100%", height: 240, objectFit: "cover", display: "block" }} />
-                      )}
+                      <img src={s.hero_image_path || PLACEHOLDER.spotlight} alt="" style={{ width: "100%", height: 240, objectFit: "cover", display: "block" }} />
                       <div style={{ padding: "16px 20px" }}>
                         {s.sponsored ? (
                           <span style={{ fontSize: 11, fontWeight: 700, color: "#7b8794", textTransform: "uppercase", letterSpacing: ".06em" }}>Sponsored feature</span>

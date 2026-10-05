@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PLACEHOLDER } from "@/lib/placeholders";
 import Link from "next/link";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -62,7 +63,9 @@ export default async function EventsPage() {
 
                 {upcoming.map((event) => (
                   <div className="central-meta item" key={event.id}>
-                    <div style={{ padding: "16px 20px" }}>
+                    <div style={{ padding: "16px 20px", display: "flex", gap: 16, alignItems: "flex-start" }}>
+                      <img src={event.cover_photo_path || PLACEHOLDER.eventCover} alt="" style={{ width: 150, height: 84, objectFit: "cover", borderRadius: 12, flexShrink: 0 }} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
                       <h4 style={{ marginBottom: 4 }}>
                         <Link href={`/events/${event.slug}`} title="">{event.title}</Link>
                       </h4>
@@ -83,6 +86,7 @@ export default async function EventsPage() {
                       <span style={{ color: "#999", fontSize: 13 }}>
                         {event.going_count} going · {event.interested_count} interested
                       </span>
+                      </div>
                     </div>
                   </div>
                 ))}

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PLACEHOLDER } from "@/lib/placeholders";
 import Link from "next/link";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -48,7 +49,9 @@ export default async function BusinessesPage() {
 
                 {businesses.map((business) => (
                   <div className="central-meta item" key={business.id}>
-                    <div style={{ padding: "16px 20px" }}>
+                    <div style={{ padding: "16px 20px", display: "flex", gap: 16, alignItems: "flex-start" }}>
+                      <img src={business.logo_path || PLACEHOLDER.businessLogo} alt="" style={{ width: 84, height: 84, objectFit: "cover", borderRadius: 12, flexShrink: 0 }} />
+                      <div style={{ minWidth: 0, flex: 1 }}>
                       <h4 style={{ marginBottom: 4 }}>
                         <Link href={`/businesses/${business.slug}`} title="">{business.name}</Link>
                       </h4>
@@ -66,6 +69,7 @@ export default async function BusinessesPage() {
                           </>
                         )}
                       </span>
+                      </div>
                     </div>
                   </div>
                 ))}

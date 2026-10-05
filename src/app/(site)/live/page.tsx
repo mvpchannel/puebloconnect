@@ -10,6 +10,7 @@ import SeeSomethingPromo from "@/components/SeeSomethingPromo";
 import LiveGoLiveButton from "@/components/LiveGoLiveButton";
 import { getCurrentUser } from "@/lib/require-user";
 import { listStreams, getLiveViewerCount, StreamWithHost } from "@/lib/db";
+import { PLACEHOLDER } from "@/lib/placeholders";
 import { toEmbedSrc } from "@/lib/stream-embed";
 
 export const metadata: Metadata = {
@@ -21,14 +22,6 @@ export const dynamic = "force-dynamic";
 
 const NAVY = "#0b2a5b";
 const AVATAR = "/images/defaults/default-avatar-male.jpg";
-const GRADIENTS = [
-  "linear-gradient(135deg, #ff6a3d, #c0392b)",
-  "linear-gradient(135deg, #1877d1, #0b3d75)",
-  "linear-gradient(135deg, #2a8f2a, #0f5c0f)",
-  "linear-gradient(135deg, #8e44ad, #4a235a)",
-  "linear-gradient(135deg, #f5a623, #c97600)",
-  "linear-gradient(135deg, #16a085, #0d5c4e)",
-];
 
 const card: React.CSSProperties = {
   background: "#fff",
@@ -124,7 +117,7 @@ export default async function LivePage() {
                       <div className="pc-live-cards">
                         {others.map(({ s, watching }) => (
                           <Link key={s.id} href={`/live/${s.id}`} title="" style={{ textDecoration: "none", color: "inherit" }}>
-                            <div style={{ position: "relative", height: 120, borderRadius: 14, background: GRADIENTS[s.id % GRADIENTS.length] }}>
+                            <div style={{ position: "relative", height: 120, borderRadius: 14, backgroundImage: `linear-gradient(rgba(11,42,91,0.25), rgba(11,42,91,0.25)), url(${PLACEHOLDER.stream})`, backgroundSize: "cover", backgroundPosition: "center" }}>
                               <span style={{ position: "absolute", top: 8, left: 8, background: "#e8261e", color: "#fff", fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 5 }}>
                                 ● LIVE
                               </span>
@@ -153,7 +146,7 @@ export default async function LivePage() {
                     ) : (
                       upcoming.map((s) => (
                         <Link key={s.id} href={`/live/${s.id}`} title="" style={{ display: "flex", gap: 12, padding: "10px 0", textDecoration: "none", borderTop: "1px solid #eef2f8" }}>
-                          <div style={{ width: 58, height: 44, borderRadius: 8, background: GRADIENTS[s.id % GRADIENTS.length], flexShrink: 0 }} />
+                          <div style={{ width: 58, height: 44, borderRadius: 8, backgroundImage: `url(${PLACEHOLDER.stream})`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: 0 }} />
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontWeight: 700, fontSize: 14, color: NAVY, lineHeight: 1.25 }}>{s.title}</div>
                             <div style={{ fontSize: 12, color: "#6b7a90" }}>{when(s.scheduled_for) || hostName(s)}</div>

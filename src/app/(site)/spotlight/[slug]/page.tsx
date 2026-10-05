@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PLACEHOLDER } from "@/lib/placeholders";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import Header from "@/components/Header";
@@ -38,9 +39,7 @@ export default function SpotlightPage({ params }: Props) {
               <div className="col-lg-9">
                 <p><Link href="/spotlight" title="">&larr; All spotlights</Link></p>
                 <div className="central-meta item">
-                  {s.hero_image_path && (
-                    <img src={s.hero_image_path} alt="" style={{ width: "100%", maxHeight: 420, objectFit: "cover", display: "block" }} />
-                  )}
+                  <img src={s.hero_image_path || PLACEHOLDER.spotlight} alt="" style={{ width: "100%", maxHeight: 420, objectFit: "cover", display: "block" }} />
                   <div style={{ padding: "22px 26px" }}>
                     {s.sponsored ? (
                       <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "#7b8794", textTransform: "uppercase", letterSpacing: ".06em" }}>

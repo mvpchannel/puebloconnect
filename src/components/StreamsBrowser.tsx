@@ -1,5 +1,6 @@
 "use client";
 
+import { PLACEHOLDER } from "@/lib/placeholders";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
@@ -142,7 +143,9 @@ export default function StreamsBrowser({
                 style={{
                   position: "relative",
                   height: 168,
-                  background: cardGradient(s.id),
+                  backgroundImage: `linear-gradient(rgba(11,42,91,0.25), rgba(11,42,91,0.25)), url(${PLACEHOLDER.stream})`,
+                  backgroundSize: "cover",
+                  backgroundPosition: "center",
                 }}
               >
                 {s.status === "live" && (

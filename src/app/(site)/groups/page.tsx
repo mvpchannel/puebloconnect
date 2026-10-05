@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PLACEHOLDER } from "@/lib/placeholders";
 import Link from "next/link";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -51,7 +52,9 @@ export default async function GroupsPage() {
                   const tags = parseTags(group.tags);
                   return (
                     <div className="central-meta item" key={group.id}>
-                      <div style={{ padding: "16px 20px" }}>
+                      <div style={{ padding: "16px 20px", display: "flex", gap: 16, alignItems: "flex-start" }}>
+                        <img src={group.cover_photo_path || PLACEHOLDER.groupCover} alt="" style={{ width: 150, height: 84, objectFit: "cover", borderRadius: 12, flexShrink: 0 }} />
+                        <div style={{ minWidth: 0, flex: 1 }}>
                         <h4 style={{ marginBottom: 4 }}>
                           <Link href={`/groups/${group.slug}`} title="">{group.name}</Link>
                         </h4>
@@ -82,6 +85,7 @@ export default async function GroupsPage() {
                             ))}
                           </div>
                         )}
+                        </div>
                       </div>
                     </div>
                   );

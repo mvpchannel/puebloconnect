@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { PLACEHOLDER } from "@/lib/placeholders";
 import { notFound } from "next/navigation";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -71,7 +72,7 @@ export default async function MemberProfilePage({ params }: Props) {
         <div className="feature-photo">
           <figure style={{ position: "relative" }}>
             <img
-              src={profileUser.cover_photo_path || "/images/resources/timeline-1.jpg"}
+              src={profileUser.cover_photo_path || PLACEHOLDER.cover}
               alt=""
             />
             {isOwner && <ProfileImageEditor kind="cover" hasImage={Boolean(profileUser.cover_photo_path)} />}
