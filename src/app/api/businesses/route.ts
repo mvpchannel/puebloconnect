@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { safeHttpUrl } from "@/lib/safe-url";
 import { requireUser } from "@/lib/require-user";
 import { createBusiness, listBusinesses, BusinessWithMeta } from "@/lib/db";
 
@@ -97,6 +98,13 @@ export async function POST(req: NextRequest) {
 
   const websiteResult = optionalString(website, MAX_SHORT_FIELD_LENGTH, "Website");
   if (!websiteResult.ok) return NextResponse.json({ error: websiteResult.error }, { status: 400 });
+  if (websiteResult.ok && websiteResult.value !== null) {
+    const safeWebsite = safeHttpUrl(websiteResult.value, { allowBare: true });
+    if (!safeWebsite) {
+      return NextResponse.json({ error: "Website must be a web address like https://example.com." }, { status: 400 });
+    }
+    websiteResult.value = safeWebsite;
+  }
 
   const hoursResult = optionalString(hoursText, MAX_SHORT_FIELD_LENGTH, "Hours");
   if (!hoursResult.ok) return NextResponse.json({ error: hoursResult.error }, { status: 400 });

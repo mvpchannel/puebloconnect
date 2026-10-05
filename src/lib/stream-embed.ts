@@ -1,3 +1,5 @@
+import { isAnyStreamHost } from "./safe-url";
+
 // Turns the share/watch URL a host pastes in (what YouTube/Facebook/
 // Vimeo actually hand you when you copy a broadcast's link) into the
 // <iframe> src each platform's embed player actually needs — those are
@@ -13,7 +15,7 @@
 // has a real seek parameter (YouTube's `start`, Vimeo's `#t=`).
 // Facebook's plugin embed has no reliable unauthenticated seek param,
 // so a Facebook clip is a label only — never a fake jump.
-export function toEmbedSrc(
+function buildEmbedSrc(
   platform: "youtube" | "facebook" | "vimeo",
   url: string,
   startSeconds?: number
@@ -63,4 +65,17 @@ export function toEmbedSrc(
   } catch {
     return url;
   }
+}
+
+// Public entry point. The iframe src is re-checked against the
+// supported-platform host allowlist, so a row saved before validation
+// existed (or any URL the transforms above passed through unchanged)
+// can never frame an arbitrary site.
+export function toEmbedSrc(
+  platform: "youtube" | "facebook" | "vimeo",
+  url: string,
+  startSeconds?: number
+): string {
+  const src = buildEmbedSrc(platform, url, startSeconds);
+  return isAnyStreamHost(src) ? src : "about:blank";
 }

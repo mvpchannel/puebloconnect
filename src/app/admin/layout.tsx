@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import AdminChrome from "@/components/admin/AdminChrome";
+import { getCurrentUser } from "@/lib/require-user";
+import { getUserById } from "@/lib/db";
 
 /**
  * Admin-section layout — its own CSS stack (the vendor admin theme's
@@ -30,6 +33,16 @@ const ADMIN_CSS = [
   "bootstrap-toggle.min.css",
 ];
 
+// Second, database-backed gate behind middleware (which can only read
+// the cookie): a demoted or suspended admin is turned away here even
+// if their old cookie is still valid.
+async function AdminGate() {
+  const session = await getCurrentUser();
+  const user = session ? getUserById(session.sub) : null;
+  if (!user || user.role !== "admin") redirect("/login?from=/admin");
+  return null;
+}
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   // NOTE: can't render a <body> tag here — only the root layout
   // (src/app/layout.tsx) may define <html>/<body>. The original static
@@ -43,6 +56,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       {ADMIN_CSS.map((f) => (
         <link rel="stylesheet" href={`/admin-assets/css/${f}`} key={f} />
       ))}
+      <AdminGate />
       <div className="menu-active admin-body">
         <AdminChrome>{children}</AdminChrome>
       </div>

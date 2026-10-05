@@ -31,6 +31,7 @@ import {
   listBopWinsForBusiness,
 } from "@/lib/db";
 import { formatRelativeTime } from "@/lib/time";
+import { renderableUrl } from "@/lib/safe-url";
 
 export async function generateMetadata({
   params,
@@ -151,10 +152,10 @@ export default async function BusinessChannelPage({
                         {business.description && <p>{business.description}</p>}
                         {business.address && <p><i className="fa fa-location-arrow" /> {business.address}</p>}
                         {business.phone && <p><i className="fa fa-phone" /> {business.phone}</p>}
-                        {business.website && (
+                        {renderableUrl(business.website) && (
                           <p>
                             <i className="fa fa-globe" />{" "}
-                            <a href={business.website} target="_blank" rel="noreferrer">
+                            <a href={renderableUrl(business.website)!} target="_blank" rel="noopener noreferrer nofollow">
                               {business.website}
                             </a>
                           </p>

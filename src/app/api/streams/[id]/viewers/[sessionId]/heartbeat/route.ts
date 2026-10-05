@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { heartbeatStreamViewer, getLiveViewerCount } from "@/lib/db";
+import { requireUser } from "@/lib/require-user";
+import { heartbeatStreamViewer, getLiveViewerCount, canUseViewerSession } from "@/lib/db";
 
 // POST /api/streams/:id/viewers/:sessionId/heartbeat — the viewer is
 // still watching. The client calls this every ~30s while the stream page
@@ -19,6 +20,11 @@ export async function POST(
   const sessionId = Number(params.sessionId);
   if (!Number.isInteger(streamId) || streamId <= 0 || !Number.isInteger(sessionId) || sessionId <= 0) {
     return NextResponse.json({ error: "Invalid id." }, { status: 400 });
+  }
+
+  const caller = requireUser(req);
+  if (!canUseViewerSession(sessionId, streamId, caller?.sub ?? null)) {
+    return NextResponse.json({ error: "Not your viewing session." }, { status: 403 });
   }
 
   const watchProgress = heartbeatStreamViewer(sessionId);

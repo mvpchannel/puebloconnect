@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
+import { limitMember } from "@/lib/rate-limit";
 import { getPostById, addComment, listCommentsForPost, createNotification } from "@/lib/db";
 
 const MAX_COMMENT_LENGTH = 2000;
@@ -51,6 +52,8 @@ export async function POST(
 ) {
   const session = requireUser(req);
   if (!session) return NextResponse.json({ error: "Not logged in." }, { status: 401 });
+  const limited = limitMember(session.sub, "comment");
+  if (limited) return limited as NextResponse;
 
   const postId = Number(params.id);
   if (!Number.isInteger(postId) || postId <= 0) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
+import { limitMember } from "@/lib/rate-limit";
 import { getPostById, togglePostLike, createNotification } from "@/lib/db";
 
 // POST /api/posts/:id/like — toggle the requesting user's like on a post.
@@ -11,6 +12,8 @@ export async function POST(
 ) {
   const session = requireUser(req);
   if (!session) return NextResponse.json({ error: "Not logged in." }, { status: 401 });
+  const limited = limitMember(session.sub, "like");
+  if (limited) return limited as NextResponse;
 
   const postId = Number(params.id);
   if (!Number.isInteger(postId) || postId <= 0) {

@@ -27,6 +27,15 @@ export const RATE_LIMITS = {
   resetPassword: { max: 10, windowSeconds: 60 * 60 } as RateLimitPolicy,
   resendVerification: { max: 4, windowSeconds: 60 * 60 } as RateLimitPolicy,
   contact: { max: 5, windowSeconds: 60 * 60 } as RateLimitPolicy,
+  // Per signed-in member. Generous for real use, tight enough that one
+  // account can't flood another member's inbox/notifications or the feed.
+  message: { max: 30, windowSeconds: 10 * 60 } as RateLimitPolicy,
+  friendRequest: { max: 20, windowSeconds: 60 * 60 } as RateLimitPolicy,
+  friendResponse: { max: 60, windowSeconds: 60 * 60 } as RateLimitPolicy,
+  comment: { max: 30, windowSeconds: 10 * 60 } as RateLimitPolicy,
+  like: { max: 120, windowSeconds: 10 * 60 } as RateLimitPolicy,
+  post: { max: 20, windowSeconds: 60 * 60 } as RateLimitPolicy,
+  report: { max: 30, windowSeconds: 60 * 60 } as RateLimitPolicy,
 } as const;
 
 // Call BEFORE doing the sensitive work. Checks the limit, and — only if
@@ -59,4 +68,16 @@ export function clientIp(req: Request): string {
   const real = req.headers.get("x-real-ip");
   if (real) return real.trim();
   return "unknown";
+}
+
+// Per-member limiter for write endpoints. Returns a ready 429 response
+// when the member is over the limit, otherwise null (and records the hit).
+export function limitMember(
+  userId: number,
+  name: keyof typeof RATE_LIMITS,
+  message = "You're doing that too fast. Please wait a bit and try again."
+): Response | null {
+  const r = checkAndRecordRateLimit(`${name}:user:${userId}`, RATE_LIMITS[name]);
+  if (r.allowed) return null;
+  return Response.json({ error: message }, { status: 429 });
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
+import { limitMember } from "@/lib/rate-limit";
 import { respondToFriendRequest, getUserById, enqueueEmail, createNotification } from "@/lib/db";
 import { processEmailQueue } from "@/lib/email";
 
@@ -13,6 +14,8 @@ export async function POST(
 ) {
   const session = requireUser(req);
   if (!session) return NextResponse.json({ error: "Not logged in." }, { status: 401 });
+  const limited = limitMember(session.sub, "friendResponse");
+  if (limited) return limited as NextResponse;
 
   const requestId = Number(params.id);
   if (!Number.isInteger(requestId) || requestId <= 0) {

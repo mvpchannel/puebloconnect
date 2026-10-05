@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
+import { safeHttpUrl } from "@/lib/safe-url";
 import { createStreetTeamSubmission, StreetTeamMediaType } from "@/lib/db";
 
 const MAX_CAPTION_LENGTH = 500;
@@ -31,6 +32,9 @@ export async function POST(req: NextRequest) {
   }
   if (mediaUrl.length > MAX_URL_LENGTH) {
     return NextResponse.json({ error: "That link is too long." }, { status: 400 });
+  }
+  if (!safeHttpUrl(mediaUrl)) {
+    return NextResponse.json({ error: "Enter a full web link starting with https://." }, { status: 400 });
   }
   if (caption !== undefined && caption !== null) {
     if (typeof caption !== "string") {

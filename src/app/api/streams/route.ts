@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
+import { isAllowedStreamUrl } from "@/lib/safe-url";
 import { createStream, listStreams, getLiveViewerCount, StreamPlatform, StreamStatus, StreamWithHost } from "@/lib/db";
 
 const VALID_PLATFORMS: StreamPlatform[] = ["youtube", "facebook", "vimeo"];
@@ -86,6 +87,12 @@ export async function POST(req: NextRequest) {
   }
   if (parsedEmbedUrl.protocol !== "https:") {
     return NextResponse.json({ error: "embedUrl must be an https URL." }, { status: 400 });
+  }
+  if (!isAllowedStreamUrl(platform, embedUrl.trim())) {
+    return NextResponse.json(
+      { error: "That link isn't from the platform you picked. Use a YouTube, Facebook or Vimeo broadcast link." },
+      { status: 400 }
+    );
   }
 
   let resolvedDescription: string | null = null;

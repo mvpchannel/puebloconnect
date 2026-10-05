@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
+import { limitMember } from "@/lib/rate-limit";
 import {
   listMessagesBetween,
   markMessagesRead,
@@ -61,6 +62,8 @@ export async function POST(
 ) {
   const session = requireUser(req);
   if (!session) return NextResponse.json({ error: "Not logged in." }, { status: 401 });
+  const limited = limitMember(session.sub, "message");
+  if (limited) return limited as NextResponse;
 
   const otherUserId = Number(params.userId);
   if (!Number.isInteger(otherUserId) || otherUserId <= 0) {

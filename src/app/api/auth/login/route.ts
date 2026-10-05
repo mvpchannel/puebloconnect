@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserByUsernameOrEmail, recordLogin } from "@/lib/db";
-import { verifyPassword } from "@/lib/password";
+import { verifyPassword, hashPassword } from "@/lib/password";
 import { signSession, SESSION_COOKIE_NAME } from "@/lib/session";
 import { checkAndRecordRateLimit, RATE_LIMITS, clientIp } from "@/lib/rate-limit";
+
+// Verified against when the account doesn't exist (or is inactive) so a
+// miss costs the same time as a wrong password — otherwise response time
+// reveals which usernames/emails are registered.
+let dummyHash: string | null = null;
+function burnPasswordCheck(password: string) {
+  if (!dummyHash) dummyHash = hashPassword("pueblo-connect-dummy-password");
+  verifyPassword(password, dummyHash);
+}
 
 const REMEMBER_ME_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
 const SESSION_ONLY_TTL_SECONDS = 60 * 60 * 24; // 1 day — still a real
@@ -20,7 +29,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { username, password, rememberMe } = (body ?? {}) as Record<string, unknown>;
-  if (typeof username !== "string" || typeof password !== "string") {
+  if (typeof username !== "string" || typeof password !== "string" || password.length > 1024 || username.length > 320) {
     return NextResponse.json(
       { error: "Username and password are required." },
       { status: 400 }
@@ -56,8 +65,10 @@ export async function POST(req: NextRequest) {
       { status: 401 }
     );
 
-  if (!user) return invalid();
-  if (user.account_status !== "active") return invalid();
+  if (!user || user.account_status !== "active") {
+    burnPasswordCheck(password);
+    return invalid();
+  }
   if (!verifyPassword(password, user.password_hash)) return invalid();
 
   recordLogin(user.id);

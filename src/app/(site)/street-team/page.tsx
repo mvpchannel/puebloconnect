@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { renderableUrl } from "@/lib/safe-url";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import Sidebar from "@/components/Sidebar";
@@ -88,7 +89,7 @@ export default async function StreetTeamPage() {
                                   style={{ width: "100%", maxHeight: 220, objectFit: "cover", borderRadius: 4 }}
                                 />
                               ) : (
-                                <a href={s.media_url} target="_blank" rel="noreferrer">
+                                <a href={renderableUrl(s.media_url) ?? "#"} target="_blank" rel="noopener noreferrer nofollow">
                                   🎥 Watch video
                                 </a>
                               )}

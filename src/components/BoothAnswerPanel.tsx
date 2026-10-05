@@ -1,4 +1,5 @@
 "use client";
+import { renderableUrl } from "@/lib/safe-url";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -175,7 +176,7 @@ export default function BoothAnswerPanel({
             {a.answerType === "text" ? (
               <p style={{ margin: 0 }}>{a.answerText}</p>
             ) : (
-              <a href={a.mediaUrl ?? "#"} target="_blank" rel="noreferrer">
+              <a href={renderableUrl(a.mediaUrl) ?? "#"} target="_blank" rel="noopener noreferrer nofollow">
                 {a.answerType === "video" ? "🎥 Watch video" : "🎙 Listen to audio"}
               </a>
             )}

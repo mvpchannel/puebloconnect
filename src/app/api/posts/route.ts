@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
+import { limitMember } from "@/lib/rate-limit";
 import { createPost, listPosts, TargetType } from "@/lib/db";
 import { saveDataUrlImage } from "@/lib/save-image";
 import { saveUploadedVideo } from "@/lib/save-video";
@@ -56,6 +57,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = requireUser(req);
   if (!session) return NextResponse.json({ error: "Not logged in." }, { status: 401 });
+  const limited = limitMember(session.sub, "post");
+  if (limited) return limited as NextResponse;
 
   // Text/photo posts arrive as JSON; a post with a video arrives as
   // multipart form data (a 50MB file can't ride inside JSON).

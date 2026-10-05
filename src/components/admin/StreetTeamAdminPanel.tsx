@@ -1,4 +1,5 @@
 "use client";
+import { renderableUrl } from "@/lib/safe-url";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -72,7 +73,7 @@ export default function StreetTeamAdminPanel({ initialPending }: StreetTeamAdmin
         >
           <div style={{ fontSize: 13, marginBottom: 4 }}>
             {s.mediaType === "photo" ? "📷" : "🎥"}{" "}
-            <a href={s.mediaUrl} target="_blank" rel="noreferrer">
+            <a href={renderableUrl(s.mediaUrl) ?? "#"} target="_blank" rel="noopener noreferrer nofollow">
               {s.mediaUrl}
             </a>
           </div>

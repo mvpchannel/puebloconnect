@@ -1,5 +1,6 @@
 "use client";
 
+import { safeInternalPath } from "@/lib/safe-url";
 import { useState, FormEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -27,7 +28,7 @@ import Link from "next/link";
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectTo = searchParams.get("from") || "/newsfeed";
+  const redirectTo = safeInternalPath(searchParams.get("from"));
 
   // Lets a link (e.g. the landing page's "Join Pueblo Connect" button)
   // deep-link straight into the register panel with /login?register=1,

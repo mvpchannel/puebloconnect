@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
+import { limitMember } from "@/lib/rate-limit";
 import {
   getNeighborhoodReportById,
   updateNeighborhoodReportStatus,
@@ -21,6 +22,8 @@ const MAX_NOTE_LENGTH = 500;
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = requireUser(req);
   if (!session) return NextResponse.json({ error: "Not logged in." }, { status: 401 });
+  const limited = limitMember(session.sub, "report");
+  if (limited) return limited as NextResponse;
   if (session.role !== "admin") {
     return NextResponse.json({ error: "Only an admin can update a report's status." }, { status: 403 });
   }

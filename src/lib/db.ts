@@ -2384,7 +2384,8 @@ export function sendFriendRequest(senderId: number, recipientId: number): Friend
   return getFriendRequestById(Number(info.lastInsertRowid), senderId)!;
 }
 
-function friendRequestSelect(viewerId: number): string {
+function friendRequestSelect(viewerIdRaw: number): string {
+  const viewerId = Math.trunc(Number(viewerIdRaw)); // always an integer — interpolated below
   return `
     SELECT
       fr.id, fr.sender_id, fr.recipient_id, fr.status, fr.created_at, fr.responded_at,
@@ -3100,6 +3101,19 @@ export type StreamWatchProgress = {
 // (every ~30s while the page is open) re-evaluates both, since there's
 // no separate background job in this app — the same "checked when
 // something happens" pattern as bumpPeakViewerCount itself.
+// A viewer-session id alone isn't enough to act on it: it must belong to
+// the stream in the URL, and a session that belongs to a member can only
+// be driven by that member. (Anonymous sessions have no owner, but also
+// never earn points.)
+export function canUseViewerSession(sessionId: number, streamId: number, callerId: number | null): boolean {
+  const row = getDb()
+    .prepare("SELECT stream_id, user_id FROM stream_viewer_sessions WHERE id = ?")
+    .get(sessionId) as { stream_id: number; user_id: number | null } | undefined;
+  if (!row || row.stream_id !== streamId) return false;
+  if (row.user_id !== null && row.user_id !== callerId) return false;
+  return true;
+}
+
 export function heartbeatStreamViewer(sessionId: number): StreamWatchProgress | null {
   const db = getDb();
   db.prepare(
@@ -5114,7 +5128,8 @@ export type StreamQaQuestion = {
 
 const MAX_OPEN_QA_PER_STREAM = 200;
 
-function qaSelect(viewerId: number | null): string {
+function qaSelect(viewerIdRaw: number | null): string {
+  const viewerId = viewerIdRaw === null ? null : Math.trunc(Number(viewerIdRaw)); // integer-only, interpolated below
   return `
     SELECT
       q.id, q.stream_id, q.author_id, q.body, q.status, q.created_at, q.answered_at,
