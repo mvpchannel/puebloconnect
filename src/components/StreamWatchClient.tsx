@@ -925,7 +925,24 @@ export default function StreamWatchClient({
   const nextMilestone = milestones.find((m) => !m.reached);
 
   return (
-    <div>
+    <div className="pc-watch">
+      <style>{`
+        .pc-watch { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
+        .pc-watch-main, .pc-watch-side { min-width: 0; }
+        .pc-watch-side { position: sticky; top: 80px; }
+        .pc-watch .central-meta.item { border: 0; border-radius: 18px; box-shadow: 0 1px 6px rgba(11,42,91,0.08); background: #fff; }
+        .pc-watch-main > .central-meta.item:first-of-type { border-radius: 18px; }
+        .pc-watch h4 { color: #0b2a5b; font-weight: 800; }
+        .pc-watch .mtr-btn.signin { border-radius: 12px; background: #f1f5fb; color: #27364d; border: 0; }
+        .pc-watch .mtr-btn.signup { border-radius: 12px; }
+        .pc-watch-chatlist { max-height: 440px; overflow-y: auto; margin-bottom: 12px; }
+        @media (max-width: 991px) {
+          .pc-watch { grid-template-columns: minmax(0, 1fr); }
+          .pc-watch-side { position: static; }
+          .pc-watch-chatlist { max-height: 320px; }
+        }
+      `}</style>
+      <div className="pc-watch-main">
       {theaterMode && (
         <div
           onClick={() => setTheaterMode(false)}
@@ -1848,7 +1865,7 @@ export default function StreamWatchClient({
                 placeholder={isLoggedIn ? "Ask the host a question…" : "Log in to ask a question"}
                 disabled={!isLoggedIn}
                 maxLength={300}
-                style={{ flex: 1, padding: "8px 12px", border: "1px solid #ddd", borderRadius: 20 }}
+                style={{ flex: 1, minWidth: 0, padding: "10px 16px", border: 0, background: "#f1f5fb", borderRadius: 999 }}
               />
               <button className="mtr-btn signup" type="submit" disabled={!isLoggedIn || !qaDraft.trim()}>
                 <span>Ask</span>
@@ -1858,6 +1875,9 @@ export default function StreamWatchClient({
         </div>
       )}
 
+      </div>
+
+      <aside className="pc-watch-side">
       <div className="central-meta item">
         <div style={{ padding: "16px 20px 20px" }}>
           <div
@@ -1868,7 +1888,7 @@ export default function StreamWatchClient({
               marginBottom: 12,
             }}
           >
-            <h4 style={{ margin: 0 }}>Chat</h4>
+            <h4 style={{ margin: 0 }}>{status === "live" ? "Live Chat" : "Chat"}</h4>
             {status === "live" && liveViewerCount !== null && (
               <span style={{ fontSize: 12.5, color: "#555" }}>
                 <span
@@ -1885,16 +1905,23 @@ export default function StreamWatchClient({
               </span>
             )}
           </div>
-          <div style={{ maxHeight: 320, overflowY: "auto", marginBottom: 12 }}>
+          <div className="pc-watch-chatlist">
             {comments.length === 0 && <p style={{ color: "#888" }}>No messages yet.</p>}
             {comments.map((c) => (
               <div key={c.id} style={{ display: "flex", gap: 10, padding: "7px 0" }}>
+                {c.authorProfilePhotoPath ? (
+                  <img
+                    src={c.authorProfilePhotoPath}
+                    alt=""
+                    style={{ flexShrink: 0, width: 32, height: 32, borderRadius: "50%", objectFit: "cover" }}
+                  />
+                ) : (
                 <span
                   aria-hidden
                   style={{
                     flexShrink: 0,
-                    width: 28,
-                    height: 28,
+                    width: 32,
+                    height: 32,
                     borderRadius: "50%",
                     background: avatarColor(c.authorId),
                     color: "#fff",
@@ -1907,6 +1934,7 @@ export default function StreamWatchClient({
                 >
                   {c.authorName.slice(0, 1).toUpperCase()}
                 </span>
+                )}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div>
                     <strong style={{ fontSize: 13.5 }}>{c.authorName}</strong>
@@ -1991,6 +2019,7 @@ export default function StreamWatchClient({
           </div>
         </div>
       )}
+      </aside>
     </div>
   );
 }

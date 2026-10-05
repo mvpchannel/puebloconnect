@@ -168,17 +168,38 @@ export default async function StreamDetailPage({
                   refId={stream.id}
                   label={`Watched ${stream.title}`}
                 />
-                <div className="central-meta item" style={{ padding: "16px 20px 4px" }}>
-                  <h3 style={{ margin: "0 0 6px" }}>{stream.title}</h3>
-                  <p style={{ color: "#888", margin: 0 }}>
-                    <img
-                      src={stream.host_profile_photo_path || "/images/defaults/default-avatar-male.jpg"}
-                      alt=""
-                      style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover", verticalAlign: "middle", marginRight: 8 }}
-                    />
-                    Hosted by {[stream.host_first_name, stream.host_last_name].filter(Boolean).join(" ") || stream.host_username}
-                    {stream.description ? ` — ${stream.description}` : ""}
-                  </p>
+                <div
+                  style={{
+                    background: "#fff",
+                    borderRadius: 18,
+                    padding: "16px 20px",
+                    marginBottom: 18,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 14,
+                    boxShadow: "0 1px 6px rgba(11,42,91,0.08)",
+                  }}
+                >
+                  <img
+                    src={stream.host_profile_photo_path || "/images/defaults/default-avatar-male.jpg"}
+                    alt=""
+                    style={{ width: 56, height: 56, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
+                  />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <h3 style={{ margin: "0 0 2px", color: "#0b2a5b", fontSize: 22, fontWeight: 800 }}>{stream.title}</h3>
+                    <div style={{ color: "#4b5b73", fontSize: 14 }}>
+                      Hosted by{" "}
+                      <a href={`/profile/${stream.host_id}`} style={{ color: "#4b5b73", fontWeight: 600 }}>
+                        {[stream.host_first_name, stream.host_last_name].filter(Boolean).join(" ") || stream.host_username}
+                      </a>
+                    </div>
+                    {stream.description && (
+                      <p style={{ margin: "6px 0 0", color: "#4b5b73", fontSize: 14, lineHeight: 1.5 }}>{stream.description}</p>
+                    )}
+                  </div>
+                  <a href="/live" style={{ color: "#1673f0", fontWeight: 700, fontSize: 14, whiteSpace: "nowrap" }}>
+                    &larr; All streams
+                  </a>
                 </div>
                 <StreamWatchClient
                   streamId={stream.id}
