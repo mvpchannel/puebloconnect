@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import EntityImageEditor from "@/components/EntityImageEditor";
 import { PLACEHOLDER } from "@/lib/placeholders";
 import { notFound } from "next/navigation";
 import Header from "@/components/Header";
@@ -49,8 +50,14 @@ export default async function GroupDetailPage({
       <Header />
       <section>
         <div className="feature-photo">
-          <figure>
+          <figure style={{ position: "relative" }}>
             <img src={group.cover_photo_path || PLACEHOLDER.groupCover} alt="" />
+            {session && (session.sub === group.creator_id || session.role === "admin") && (
+              <EntityImageEditor
+                endpoint={`/api/groups/${group.slug}/image`}
+                slots={[{ label: "cover photo", hasImage: Boolean(group.cover_photo_path), maxSide: 1600 }]}
+              />
+            )}
           </figure>
           <div className="container-fluid">
             <div className="row merged">

@@ -3301,6 +3301,11 @@ export function listBusinessesForOwner(ownerId: number): BusinessWithMeta[] {
     .all(ownerId) as BusinessWithMeta[];
 }
 
+export function setBusinessImage(businessId: number, kind: "logo" | "cover", path: string | null): void {
+  const col = kind === "logo" ? "logo_path" : "cover_photo_path"; // fixed whitelist, never user input
+  getDb().prepare(`UPDATE businesses SET ${col} = ? WHERE id = ?`).run(path, businessId);
+}
+
 export function isBusinessOwner(businessId: number, userId: number): boolean {
   const db = getDb();
   const row = db
@@ -6500,4 +6505,12 @@ export function setDropClaimRedeemed(claimId: number, redeemed: boolean): boolea
     .prepare("UPDATE pueblo_drop_claims SET redeemed_at = CASE WHEN ? = 1 THEN datetime('now') ELSE NULL END WHERE id = ?")
     .run(redeemed ? 1 : 0, claimId);
   return Number(info.changes) > 0;
+}
+
+export function setEventCover(eventId: number, path: string | null): void {
+  getDb().prepare("UPDATE events SET cover_photo_path = ? WHERE id = ?").run(path, eventId);
+}
+
+export function setGroupCover(groupId: number, path: string | null): void {
+  getDb().prepare("UPDATE groups SET cover_photo_path = ? WHERE id = ?").run(path, groupId);
 }

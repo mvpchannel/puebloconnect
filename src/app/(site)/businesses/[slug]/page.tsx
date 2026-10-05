@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import EntityImageEditor from "@/components/EntityImageEditor";
 import { PLACEHOLDER } from "@/lib/placeholders";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -94,8 +95,17 @@ export default async function BusinessChannelPage({
       />
       <section>
         <div className="feature-photo">
-          <figure>
+          <figure style={{ position: "relative" }}>
             <img src={business.cover_photo_path || PLACEHOLDER.businessCover} alt="" />
+            {(isOwner || session?.role === "admin") && (
+              <EntityImageEditor
+                endpoint={`/api/businesses/${business.slug}/image`}
+                slots={[
+                  { kind: "logo", label: "logo", hasImage: Boolean(business.logo_path), maxSide: 480 },
+                  { kind: "cover", label: "cover photo", hasImage: Boolean(business.cover_photo_path), maxSide: 1600 },
+                ]}
+              />
+            )}
           </figure>
           <div className="container-fluid">
             <div className="row merged">

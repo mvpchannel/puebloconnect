@@ -35,6 +35,7 @@ export const RATE_LIMITS = {
   comment: { max: 30, windowSeconds: 10 * 60 } as RateLimitPolicy,
   like: { max: 120, windowSeconds: 10 * 60 } as RateLimitPolicy,
   post: { max: 20, windowSeconds: 60 * 60 } as RateLimitPolicy,
+  upload: { max: 20, windowSeconds: 60 * 60 } as RateLimitPolicy,
   report: { max: 30, windowSeconds: 60 * 60 } as RateLimitPolicy,
 } as const;
 

@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import EntityImageEditor from "@/components/EntityImageEditor";
 import { PLACEHOLDER } from "@/lib/placeholders";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -68,8 +69,14 @@ export default async function EventDetailPage({
       <Header />
       <section>
         <div className="feature-photo">
-          <figure>
+          <figure style={{ position: "relative" }}>
             <img src={event.cover_photo_path || PLACEHOLDER.eventCover} alt="" />
+            {session && (session.sub === event.creator_id || session.role === "admin") && (
+              <EntityImageEditor
+                endpoint={`/api/events/${event.slug}/image`}
+                slots={[{ label: "cover photo", hasImage: Boolean(event.cover_photo_path), maxSide: 1600 }]}
+              />
+            )}
           </figure>
           <div className="container-fluid">
             <div className="row merged">
