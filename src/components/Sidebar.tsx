@@ -71,6 +71,10 @@ export default function Sidebar() {
             <Link href="/booth" title="">The Pueblo Booth</Link>
           </li>
           <li>
+            <i className="ti-credit-card" />
+            <Link href="/pass" title="">Pueblo Pass</Link>
+          </li>
+          <li>
             <i className="ti-id-badge" />
             <Link href="/passport" title="">Pueblo Passport</Link>
           </li>

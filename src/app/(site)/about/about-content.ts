@@ -54,7 +54,7 @@ export const GROUPS: ProgramGroup[] = [
     programs: [
       { name: "Pueblo Deals", status: "live", href: "/deals", description: "The local offers marketplace: 20% off dinner tonight, buy two tacos and get one free, $10 off a service. A reason to come back often." },
       { name: "Pueblo Flash Deals", status: "live", href: "/deals", description: "The urgent version of Deals — offers that last a few hours or a day, like “25% off from 4–7 PM today.”" },
-      { name: "Pueblo Pass", status: "soon", description: "The digital membership card for the Pueblo. Eventually, show your Pass at participating businesses to unlock discounts, events, rewards and special experiences." },
+      { name: "Pueblo Pass", status: "prototype", href: "/pass", description: "The digital membership card for the Pueblo. Eventually, show your Pass at participating businesses to unlock discounts, events, rewards and special experiences." },
       { name: "Pueblo Points", status: "live", href: "/rewards", description: "Earn points for activities that benefit the community — visiting businesses, checking into events, exploring the 3D Pueblo, watching Pueblo Live, referring friends. Redeem them for participating-business rewards." },
       { name: "Pueblo Passport", status: "live", href: "/passport", description: "Exploring the community as a game. Collect digital stamps for visiting participating places and earn badges like “Taste of the Pueblo.”" },
       { name: "Pueblo Check-In", status: "live", href: "/events", description: "Check in at participating events and businesses to earn Points, Passport stamps and rewards." },
