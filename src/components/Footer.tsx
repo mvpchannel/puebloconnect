@@ -64,6 +64,7 @@ export default function Footer() {
                   <li><Link href="/membership" title="">Business Membership</Link></li>
                   <li><Link href="/advertise" title="">Advertise</Link></li>
                   <li><Link href="/terms" title="">Terms &amp; conditions</Link></li>
+                  <li><Link href="/privacy" title="">Privacy policy</Link></li>
                   <li><Link href="/sitemap-page" title="">Sitemap</Link></li>
                 </ul>
               </div>

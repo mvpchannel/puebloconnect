@@ -357,7 +357,7 @@ function LoginForm() {
                       onChange={(e) => setRegAgree(e.target.checked)}
                     />
                     <i className="check-box" />
-                    Accept <a href="/terms" target="_blank" rel="noreferrer">Terms &amp; Conditions</a>?
+                    Accept <a href="/terms" target="_blank" rel="noreferrer">Terms &amp; Conditions</a> and the <a href="/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>?
                   </label>
                 </div>
                 <div className="submit-btns">

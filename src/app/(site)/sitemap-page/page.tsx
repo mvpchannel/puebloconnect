@@ -75,6 +75,7 @@ export default function SitemapPage() {
                   <h4>Support</h4>
                   <ul className="naves">
                     <li><Link href="/terms" title="">Terms &amp; conditions</Link></li>
+                    <li><Link href="/privacy" title="">Privacy policy</Link></li>
                   </ul>
                 </div>
               </div>
