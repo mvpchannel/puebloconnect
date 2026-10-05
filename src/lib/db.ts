@@ -234,6 +234,21 @@ function getDb(): DatabaseSync {
       db.exec("ALTER TABLE posts ADD COLUMN video_path TEXT");
     }
 
+    // Stories: a photo (+ optional caption) that disappears from the
+    // stories row 24 hours after it was posted. Rows are kept (soft
+    // delete / expiry is a query filter) so nothing is lost silently.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stories (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        author_id INTEGER NOT NULL REFERENCES users(id),
+        image_path TEXT NOT NULL,
+        caption TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        deleted_at TEXT
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_stories_created ON stories(created_at)`);
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS post_likes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5562,4 +5577,58 @@ export function listContactMessages(limit = 100): ContactMessage[] {
   return db
     .prepare("SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT ?")
     .all(limit) as ContactMessage[];
+}
+
+
+// ---------------------------------------------------------------------------
+// Stories (24-hour photo stories shown above the newsfeed)
+// ---------------------------------------------------------------------------
+
+export type StoryRow = {
+  id: number;
+  author_id: number;
+  image_path: string;
+  caption: string | null;
+  created_at: string;
+  author_username: string;
+  author_first_name: string | null;
+  author_last_name: string | null;
+  author_profile_photo_path: string | null;
+};
+
+const STORY_SELECT = `
+  SELECT s.id, s.author_id, s.image_path, s.caption, s.created_at,
+         u.username AS author_username, u.first_name AS author_first_name,
+         u.last_name AS author_last_name, u.profile_photo_path AS author_profile_photo_path
+  FROM stories s JOIN users u ON u.id = s.author_id
+`;
+
+export function createStory(authorId: number, imagePath: string, caption: string | null): StoryRow {
+  const db = getDb();
+  const info = db
+    .prepare("INSERT INTO stories (author_id, image_path, caption) VALUES (?, ?, ?)")
+    .run(authorId, imagePath, caption);
+  return db.prepare(`${STORY_SELECT} WHERE s.id = ?`).get(Number(info.lastInsertRowid)) as StoryRow;
+}
+
+// Every story from the last 24 hours, oldest first (the order a viewer
+// plays them in).
+export function listActiveStories(): StoryRow[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `${STORY_SELECT} WHERE s.deleted_at IS NULL AND s.created_at > datetime('now', '-24 hours')
+       ORDER BY s.created_at ASC, s.id ASC`
+    )
+    .all() as StoryRow[];
+}
+
+export function getStoryById(id: number): StoryRow | undefined {
+  const db = getDb();
+  return db.prepare(`${STORY_SELECT} WHERE s.id = ? AND s.deleted_at IS NULL`).get(id) as StoryRow | undefined;
+}
+
+export function softDeleteStory(id: number): void {
+  const db = getDb();
+  db.prepare("UPDATE stories SET deleted_at = datetime('now') WHERE id = ?").run(id);
 }

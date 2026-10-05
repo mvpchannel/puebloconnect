@@ -6,10 +6,12 @@ import Sidebar from "@/components/Sidebar";
 import PostComposer from "@/components/PostComposer";
 import PostCard from "@/components/PostCard";
 import LoadMoreFeed from "@/components/LoadMoreFeed";
+import StoriesRow from "@/components/StoriesRow";
+import { groupStories } from "@/lib/stories";
 import DealClaimButton from "@/components/DealClaimButton";
 import { getCurrentUser } from "@/lib/require-user";
 import { viewerAvatarSrc } from "@/lib/viewer";
-import { listFeedPosts, getFeaturedDeal, hasClaimedDeal } from "@/lib/db";
+import { listFeedPosts, listActiveStories, getFeaturedDeal, hasClaimedDeal } from "@/lib/db";
 import { formatRelativeTime } from "@/lib/time";
 
 export const metadata: Metadata = {
@@ -25,6 +27,7 @@ export const metadata: Metadata = {
 export default async function NewsfeedPage() {
   const session = await getCurrentUser();
   const viewerAvatar = viewerAvatarSrc(session?.sub ?? null);
+  const storyGroups = groupStories(listActiveStories());
   const PAGE_SIZE = 30;
   const rows = listFeedPosts(session?.sub ?? null, PAGE_SIZE + 1);
   const posts = rows.slice(0, PAGE_SIZE);
@@ -69,6 +72,13 @@ export default async function NewsfeedPage() {
                 )}
               </div>
               <div className="col-lg-6">
+                <StoriesRow
+                  groups={storyGroups}
+                  isLoggedIn={Boolean(session)}
+                  currentUserId={session?.sub ?? null}
+                  isAdmin={session?.role === "admin"}
+                  viewerAvatar={viewerAvatar}
+                />
                 <PostComposer avatarSrc={viewerAvatar} isLoggedIn={Boolean(session)} />
                 <div className="loadMore">
                   {posts.length === 0 && (
