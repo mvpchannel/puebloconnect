@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
 import { createPost, listPosts, TargetType } from "@/lib/db";
 import { saveDataUrlImage } from "@/lib/save-image";
+import { saveUploadedVideo } from "@/lib/save-video";
 
 const VALID_TARGET_TYPES: TargetType[] = ["feed", "group", "business", "event"];
 const MAX_POST_LENGTH = 5000;
@@ -38,6 +39,7 @@ export async function GET(req: NextRequest) {
       authorProfilePhotoPath: p.author_profile_photo_path,
       body: p.body,
       imagePath: p.image_path,
+      videoPath: p.video_path,
       targetType: p.target_type,
       targetId: p.target_id,
       createdAt: p.created_at,
@@ -55,19 +57,35 @@ export async function POST(req: NextRequest) {
   const session = requireUser(req);
   if (!session) return NextResponse.json({ error: "Not logged in." }, { status: 401 });
 
-  let body: unknown;
+  // Text/photo posts arrive as JSON; a post with a video arrives as
+  // multipart form data (a 50MB file can't ride inside JSON).
+  let text: unknown, targetType: unknown, targetId: unknown, imageDataUrl: unknown;
+  let videoFile: File | null = null;
+  const isMultipart = (req.headers.get("content-type") ?? "").includes("multipart/form-data");
   try {
-    body = await req.json();
+    if (isMultipart) {
+      const form = await req.formData();
+      text = form.get("body") ?? "";
+      const t = form.get("targetType");
+      targetType = t === null || t === "" ? undefined : t;
+      const id = form.get("targetId");
+      targetId = id === null || id === "" ? undefined : Number(id);
+      const v = form.get("video");
+      if (v instanceof File && v.size > 0) videoFile = v;
+    } else {
+      ({ body: text, targetType, targetId, imageDataUrl } = ((await req.json()) ?? {}) as Record<string, unknown>);
+    }
   } catch {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
 
-  const { body: text, targetType, targetId, imageDataUrl } = (body ?? {}) as Record<string, unknown>;
-
   const hasImage = typeof imageDataUrl === "string" && imageDataUrl.length > 0;
-  // A post needs words, a photo, or both.
-  if (typeof text !== "string" || (text.trim().length === 0 && !hasImage)) {
-    return NextResponse.json({ error: "Write something or add a photo." }, { status: 400 });
+  // A post needs words, a photo or video, or both.
+  if (typeof text !== "string" || (text.trim().length === 0 && !hasImage && !videoFile)) {
+    return NextResponse.json({ error: "Write something or add a photo or video." }, { status: 400 });
+  }
+  if (hasImage && videoFile) {
+    return NextResponse.json({ error: "Add a photo or a video, not both." }, { status: 400 });
   }
   if (text.length > MAX_POST_LENGTH) {
     return NextResponse.json(
@@ -101,7 +119,16 @@ export async function POST(req: NextRequest) {
     imagePath = saved;
   }
 
-  const post = createPost(session.sub, text.trim(), resolvedTargetType, resolvedTargetId, imagePath);
+  let videoPath: string | null = null;
+  if (videoFile) {
+    const saved = await saveUploadedVideo(videoFile, "posts");
+    if (typeof saved !== "string") {
+      return NextResponse.json({ error: `Video: ${saved.error}` }, { status: 400 });
+    }
+    videoPath = saved;
+  }
+
+  const post = createPost(session.sub, text.trim(), resolvedTargetType, resolvedTargetId, imagePath, videoPath);
   return NextResponse.json(
     {
       post: {
@@ -114,6 +141,7 @@ export async function POST(req: NextRequest) {
         authorProfilePhotoPath: post.author_profile_photo_path,
         body: post.body,
         imagePath: post.image_path,
+        videoPath: post.video_path,
         targetType: post.target_type,
         targetId: post.target_id,
         createdAt: post.created_at,

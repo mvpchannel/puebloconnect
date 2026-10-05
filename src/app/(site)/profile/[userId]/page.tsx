@@ -163,6 +163,7 @@ export default async function MemberProfilePage({ params }: Props) {
                           publishedLabel={formatRelativeTime(post.created_at)}
                           text={post.body}
                           imageSrc={post.image_path}
+                          videoSrc={post.video_path}
                           initialLikeCount={post.like_count}
                           initialLiked={Boolean(post.liked_by_viewer)}
                           initialCommentCount={post.comment_count}

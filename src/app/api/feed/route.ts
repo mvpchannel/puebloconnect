@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
       authorProfilePhotoPath: p.author_profile_photo_path,
       body: p.body,
       imagePath: p.image_path,
+      videoPath: p.video_path,
       createdAt: p.created_at,
       likeCount: p.like_count,
       commentCount: p.comment_count,

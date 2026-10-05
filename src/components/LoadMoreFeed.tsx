@@ -11,6 +11,7 @@ type FeedPostJson = {
   authorProfilePhotoPath: string | null;
   body: string;
   imagePath: string | null;
+  videoPath: string | null;
   createdAt: string;
   likeCount: number;
   commentCount: number;
@@ -70,6 +71,7 @@ export default function LoadMoreFeed({ initialCursor, isLoggedIn, currentUserId,
           publishedLabel={formatRelativeTime(p.createdAt)}
           text={p.body}
           imageSrc={p.imagePath}
+          videoSrc={p.videoPath}
           postedIn={p.postedInLabel && p.postedInHref ? { label: p.postedInLabel, href: p.postedInHref } : null}
           initialLikeCount={p.likeCount}
           initialLiked={p.likedByViewer}

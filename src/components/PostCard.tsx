@@ -11,6 +11,7 @@ type PostCardProps = {
   publishedLabel: string;
   text: string;
   imageSrc?: string | null;
+  videoSrc?: string | null;
   initialLikeCount?: number;
   initialLiked?: boolean;
   initialCommentCount?: number;
@@ -47,6 +48,7 @@ export default function PostCard({
   publishedLabel,
   text,
   imageSrc = null,
+  videoSrc = null,
   initialLikeCount = 0,
   initialLiked = false,
   initialCommentCount = 0,
@@ -231,6 +233,15 @@ export default function PostCard({
           <div className="post-meta">
             <div className="description">
               {text && <p>{text}</p>}
+              {videoSrc && (
+                <video
+                  src={videoSrc}
+                  controls
+                  playsInline
+                  preload="metadata"
+                  style={{ width: "100%", maxHeight: 560, background: "#000", borderRadius: 6, marginTop: 8 }}
+                />
+              )}
               {imageSrc && (
                 <img
                   src={imageSrc}
