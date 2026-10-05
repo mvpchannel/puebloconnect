@@ -3496,6 +3496,16 @@ export function listEvents(when: "upcoming" | "past" = "upcoming", limit = 50): 
     .all(limit) as EventWithMeta[];
 }
 
+// Events that start at or after an ISO timestamp (UTC), soonest first.
+// event.starts_at is stored as an ISO string, so ISO-vs-ISO comparison is
+// correct here (unlike comparing against datetime('now')).
+export function listEventsStartingAfter(isoUtc: string, limit = 100): EventWithMeta[] {
+  const db = getDb();
+  return db
+    .prepare(`${EVENT_SELECT} WHERE e.starts_at >= ? ORDER BY e.starts_at ASC LIMIT ?`)
+    .all(isoUtc, limit) as EventWithMeta[];
+}
+
 export function listEventsForBusiness(businessId: number): EventWithMeta[] {
   const db = getDb();
   return db

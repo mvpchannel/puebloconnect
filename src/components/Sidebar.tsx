@@ -74,6 +74,10 @@ export default function Sidebar() {
             <i className="ti-star" />
             <Link href="/rewards" title="">Pueblo Rewards</Link>
           </li>
+          <li>
+            <i className="ti-timer" />
+            <Link href="/tonight" title="">Happening Tonight</Link>
+          </li>
         </ul>
       </div>
     </aside>

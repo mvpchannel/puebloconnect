@@ -288,6 +288,7 @@ export default function Header() {
                 <li><Link href="/street-team" title="">Pueblo Street Team</Link></li>
                 <li><Link href="/booth" title="">The Pueblo Booth</Link></li>
                 <li><Link href="/passport" title="">Pueblo Passport</Link></li>
+                <li><Link href="/tonight" title="">What&apos;s Happening Tonight</Link></li>
                 <li><Link href="/rewards" title="">Pueblo Rewards</Link></li>
                 <li><Link href="/groups" title="">Groups</Link></li>
                 <li><Link href="/explore-3d" title="">Explore the Pueblo in 3D</Link></li>
