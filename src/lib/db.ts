@@ -267,6 +267,27 @@ function getDb(): DatabaseSync {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_classifieds_created ON classifieds(created_at)`);
 
+    // Business Spotlight: editorial features written by Pueblo Connect staff
+    // (admins) about a local business. Drafts are invisible to the public.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS spotlights (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT UNIQUE NOT NULL,
+        business_id INTEGER REFERENCES businesses(id),
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        owner_name TEXT,
+        body TEXT NOT NULL,
+        hero_image_path TEXT,
+        sponsored INTEGER NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'published')),
+        published_at TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        deleted_at TEXT
+      )
+    `);
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS post_likes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5743,4 +5764,114 @@ export function setClassifiedStatus(id: number, status: "active" | "sold"): void
 
 export function softDeleteClassified(id: number): void {
   getDb().prepare("UPDATE classifieds SET deleted_at = datetime('now') WHERE id = ?").run(id);
+}
+
+
+// ---------------------------------------------------------------------------
+// Business Spotlight
+// ---------------------------------------------------------------------------
+
+export type SpotlightRow = {
+  id: number;
+  slug: string;
+  business_id: number | null;
+  title: string;
+  summary: string;
+  owner_name: string | null;
+  body: string;
+  hero_image_path: string | null;
+  sponsored: number;
+  status: "draft" | "published";
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+  business_name: string | null;
+  business_slug: string | null;
+};
+
+const BIZ_SPOTLIGHT_SELECT = `
+  SELECT sp.id, sp.slug, sp.business_id, sp.title, sp.summary, sp.owner_name, sp.body,
+         sp.hero_image_path, sp.sponsored, sp.status, sp.published_at, sp.created_at, sp.updated_at,
+         b.name AS business_name, b.slug AS business_slug
+  FROM spotlights sp LEFT JOIN businesses b ON b.id = sp.business_id
+`;
+
+export type SpotlightInput = {
+  businessId: number | null;
+  title: string;
+  summary: string;
+  ownerName: string | null;
+  body: string;
+  heroImagePath?: string | null; // undefined = leave alone, null = clear, string = set (update only)
+  sponsored: boolean;
+  publish: boolean;
+};
+
+function uniqueSpotlightSlug(db: DatabaseSync, title: string): string {
+  const base = slugify(title).slice(0, 60) || "spotlight";
+  let candidate = base;
+  let n = 2;
+  while (db.prepare("SELECT id FROM spotlights WHERE slug = ?").get(candidate)) {
+    candidate = `${base}-${n}`;
+    n += 1;
+  }
+  return candidate;
+}
+
+export function createSpotlight(input: SpotlightInput): SpotlightRow {
+  const db = getDb();
+  const slug = uniqueSpotlightSlug(db, input.title);
+  const info = db
+    .prepare(
+      `INSERT INTO spotlights (slug, business_id, title, summary, owner_name, body, hero_image_path, sponsored, status, published_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ${input.publish ? "datetime('now')" : "NULL"})`
+    )
+    .run(
+      slug, input.businessId, input.title, input.summary, input.ownerName, input.body,
+      input.heroImagePath ?? null, input.sponsored ? 1 : 0, input.publish ? "published" : "draft"
+    );
+  return getSpotlightById(Number(info.lastInsertRowid))!;
+}
+
+export function updateSpotlight(id: number, input: SpotlightInput): SpotlightRow | undefined {
+  const db = getDb();
+  const existing = getSpotlightById(id);
+  if (!existing) return undefined;
+  const heroPath = input.heroImagePath === undefined ? existing.hero_image_path : input.heroImagePath;
+  // The first publish stamps published_at; later edits keep the original date.
+  const nowSql = new Date().toISOString().slice(0, 19).replace("T", " ");
+  const publishedAt = input.publish ? existing.published_at ?? nowSql : existing.published_at;
+  db.prepare(
+    `UPDATE spotlights SET business_id = ?, title = ?, summary = ?, owner_name = ?, body = ?,
+       hero_image_path = ?, sponsored = ?, status = ?, published_at = ?, updated_at = datetime('now')
+     WHERE id = ?`
+  ).run(
+    input.businessId, input.title, input.summary, input.ownerName, input.body,
+    heroPath, input.sponsored ? 1 : 0, input.publish ? "published" : "draft", publishedAt, id
+  );
+  return getSpotlightById(id);
+}
+
+export function getSpotlightById(id: number): SpotlightRow | undefined {
+  return getDb().prepare(`${BIZ_SPOTLIGHT_SELECT} WHERE sp.id = ? AND sp.deleted_at IS NULL`).get(id) as
+    | SpotlightRow
+    | undefined;
+}
+
+// Public read: published only.
+export function getPublishedSpotlightBySlug(slug: string): SpotlightRow | undefined {
+  return getDb()
+    .prepare(`${BIZ_SPOTLIGHT_SELECT} WHERE sp.slug = ? AND sp.status = 'published' AND sp.deleted_at IS NULL`)
+    .get(slug) as SpotlightRow | undefined;
+}
+
+export function listSpotlights(opts: { publishedOnly: boolean }): SpotlightRow[] {
+  const where = opts.publishedOnly ? "sp.deleted_at IS NULL AND sp.status = 'published'" : "sp.deleted_at IS NULL";
+  return getDb()
+    .prepare(`${BIZ_SPOTLIGHT_SELECT} WHERE ${where} ORDER BY COALESCE(sp.published_at, sp.created_at) DESC, sp.id DESC`)
+    .all() as SpotlightRow[];
+}
+
+export function softDeleteSpotlight(id: number): void {
+  getDb().prepare("UPDATE spotlights SET deleted_at = datetime('now') WHERE id = ?").run(id);
 }

@@ -11,6 +11,10 @@ export default function Sidebar() {
         <h4 className="widget-title">Shortcuts</h4>
         <ul className="naves">
           <li>
+            <i className="ti-medall" />
+            <Link href="/spotlight" title="">Business Spotlight</Link>
+          </li>
+          <li>
             <i className="ti-clipboard" />
             <Link href="/newsfeed" title="">Newsfeed</Link>
           </li>

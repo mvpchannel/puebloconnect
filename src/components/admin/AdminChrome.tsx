@@ -33,6 +33,7 @@ const MORE_LINKS: { href: string; label: string; icon: string }[] = [
   { href: "/admin/best-of", label: "best of the pueblo", icon: "fa-trophy" },
   { href: "/admin/street-team", label: "street team review", icon: "fa-camera" },
   { href: "/admin/booth", label: "the pueblo booth", icon: "fa-microphone" },
+  { href: "/admin/spotlights", label: "business spotlight", icon: "fa-star" },
 ];
 
 /**
