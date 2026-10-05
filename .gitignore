@@ -15,3 +15,7 @@ data/*.db-wal
 # Production secrets
 .env
 .env.production
+
+# first-run helper output
+first-run-report.txt
+.first-run-*.log

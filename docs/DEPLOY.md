@@ -63,6 +63,7 @@ The code was written and tested in a sandbox that could not run `next build` or
 open a browser, so the first live deploy is also the first time the pages are
 rendered. Check these in order and send back anything that looks wrong:
 
+0. **Quick try on any computer with Node 22.5+:** from the project folder run `bash scripts/first-run.sh`. It installs, builds, starts the site, checks about 60 pages and files, and writes `first-run-report.txt`. Send that file back (it contains no secrets). Then continue below in a browser.
 1. **Build succeeds** (`docker compose ... up -d --build`). If not, send the error output.
 2. **Sign up → verification email → log in → post → photo upload → video upload** on the live URL. (Without `RESEND_API_KEY` no emails are sent.)
 3. **Uploaded files load.** Open a photo you just posted; `/uploads/...` is served by Caddy from the shared volume.
