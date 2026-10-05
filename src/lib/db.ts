@@ -631,6 +631,12 @@ function getDb(): DatabaseSync {
       db.exec("ALTER TABLE businesses ADD COLUMN storefront_color TEXT");
     }
 
+    // 360° Virtual Business Tours: an admin-attached tour link (validated
+    // against an allowlist; see src/lib/tour-url.ts) and its derived embed address.
+    for (const col of ["tour_url", "tour_provider", "tour_embed"]) {
+      if (!columnExists(db, "businesses", col)) db.exec(`ALTER TABLE businesses ADD COLUMN ${col} TEXT`);
+    }
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS business_followers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -6207,4 +6213,64 @@ export function enableStorefront(businessId: number, color: string): { ok: true;
 
 export function disableStorefront(businessId: number): void {
   getDb().prepare("UPDATE businesses SET storefront_lot = NULL, storefront_color = NULL WHERE id = ?").run(businessId);
+}
+
+
+// ---------------------------------------------------------------------------
+// 360° Virtual Business Tours
+// ---------------------------------------------------------------------------
+
+export type BusinessTour = {
+  business_id: number;
+  name: string;
+  slug: string;
+  category: string;
+  tour_url: string;
+  tour_provider: "youtube" | "vimeo" | "matterport";
+  tour_embed: string;
+};
+
+export function getBusinessTour(businessId: number): BusinessTour | undefined {
+  return getDb()
+    .prepare(
+      `SELECT id AS business_id, name, slug, category, tour_url, tour_provider, tour_embed
+       FROM businesses WHERE id = ? AND tour_embed IS NOT NULL`
+    )
+    .get(businessId) as BusinessTour | undefined;
+}
+
+export function getBusinessTourBySlug(slug: string): BusinessTour | undefined {
+  return getDb()
+    .prepare(
+      `SELECT id AS business_id, name, slug, category, tour_url, tour_provider, tour_embed
+       FROM businesses WHERE slug = ? AND tour_embed IS NOT NULL`
+    )
+    .get(slug) as BusinessTour | undefined;
+}
+
+export function listBusinessTours(): BusinessTour[] {
+  return getDb()
+    .prepare(
+      `SELECT id AS business_id, name, slug, category, tour_url, tour_provider, tour_embed
+       FROM businesses WHERE tour_embed IS NOT NULL ORDER BY name COLLATE NOCASE`
+    )
+    .all() as BusinessTour[];
+}
+
+export function setBusinessTour(businessId: number, tourUrl: string, provider: string, embed: string): boolean {
+  const info = getDb()
+    .prepare("UPDATE businesses SET tour_url = ?, tour_provider = ?, tour_embed = ? WHERE id = ?")
+    .run(tourUrl, provider, embed, businessId);
+  return Number(info.changes) > 0;
+}
+
+export function clearBusinessTour(businessId: number): void {
+  getDb().prepare("UPDATE businesses SET tour_url = NULL, tour_provider = NULL, tour_embed = NULL WHERE id = ?").run(businessId);
+}
+
+// Every business with its tour link (if any), for the admin screen.
+export function listBusinessesWithTourState(): { id: number; name: string; category: string; tour_url: string | null }[] {
+  return getDb()
+    .prepare("SELECT id, name, category, tour_url FROM businesses ORDER BY name COLLATE NOCASE")
+    .all() as { id: number; name: string; category: string; tour_url: string | null }[];
 }

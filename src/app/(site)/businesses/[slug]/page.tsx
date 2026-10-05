@@ -16,6 +16,7 @@ import { getCurrentUser } from "@/lib/require-user";
 import { viewerAvatarSrc } from "@/lib/viewer";
 import {
   getBusinessBySlug,
+  getBusinessTour,
   isFollowingBusiness,
   isBusinessOwner,
   listPosts,
@@ -161,6 +162,13 @@ export default async function BusinessChannelPage({
                         {business.hours_text && <p><i className="fa fa-clock-o" /> {business.hours_text}</p>}
                         <p style={{ color: "#999" }}>Owned by {business.owner_username}</p>
                       </div>
+                      {getBusinessTour(business.id) && (
+                        <div style={{ padding: "0 16px 12px" }}>
+                          <Link href={`/tours/${business.slug}`} title="" className="mtr-btn signup">
+                            <span>Take a virtual tour</span>
+                          </Link>
+                        </div>
+                      )}
                       <div style={{ padding: "0 16px 16px" }}>
                         <BusinessFollowButton
                           slug={business.slug}
