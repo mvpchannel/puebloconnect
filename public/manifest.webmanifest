@@ -1,7 +1,7 @@
 {
   "name": "Pueblo Connect",
   "short_name": "Pueblo Connect",
-  "description": "Connect Local. Shop Local. Grow Together. A community-focused social network connecting Pueblo residents and local businesses, powered by The Daily Pueblo.",
+  "description": "Connect Local. Shop Local. Grow Together. A community-focused social network connecting Northeast Los Angeles residents and local businesses, powered by The Daily Pueblo.",
   "start_url": "/newsfeed",
   "scope": "/",
   "display": "standalone",

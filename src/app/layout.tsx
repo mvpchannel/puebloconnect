@@ -13,7 +13,7 @@ import { SITE_URL } from "@/lib/site-url";
  * builds fighting over the same class names site-wide.
  */
 const SITE_DESCRIPTION =
-  "Connect Local. Shop Local. Grow Together. A community-focused social network connecting Pueblo residents and local businesses, powered by The Daily Pueblo.";
+  "Connect Local. Shop Local. Grow Together. A community-focused social network connecting Northeast Los Angeles residents and local businesses, powered by The Daily Pueblo.";
 
 export const metadata: Metadata = {
   // Lets every relative URL in this file (and in page-level metadata,
