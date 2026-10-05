@@ -1223,7 +1223,7 @@ function getDb(): DatabaseSync {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL REFERENCES users(id),
         actor_id INTEGER REFERENCES users(id),
-        kind TEXT NOT NULL CHECK (kind IN ('friend_request', 'friend_accepted', 'new_message', 'post_like', 'post_comment')),
+        kind TEXT NOT NULL CHECK (kind IN ('friend_request', 'friend_accepted', 'new_message', 'post_like', 'post_comment', 'stream_live')),
         ref_type TEXT,
         ref_id INTEGER,
         read_at TEXT,
@@ -1231,6 +1231,60 @@ function getDb(): DatabaseSync {
       )
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at)`);
+
+    // Databases created before 'stream_live' existed have the old CHECK
+    // list baked into the table; SQLite can't alter a CHECK, so rebuild
+    // the table once (rows are copied as-is).
+    const notifSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'notifications'").get() as { sql: string } | undefined)?.sql ?? "";
+    if (notifSql && !notifSql.includes("stream_live")) {
+      db.exec("BEGIN");
+      try {
+        db.exec(`
+          CREATE TABLE notifications_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            actor_id INTEGER REFERENCES users(id),
+            kind TEXT NOT NULL CHECK (kind IN ('friend_request', 'friend_accepted', 'new_message', 'post_like', 'post_comment', 'stream_live')),
+            ref_type TEXT,
+            ref_id INTEGER,
+            read_at TEXT,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO notifications_new (id, user_id, actor_id, kind, ref_type, ref_id, read_at, created_at)
+            SELECT id, user_id, actor_id, kind, ref_type, ref_id, read_at, created_at FROM notifications;
+          DROP TABLE notifications;
+          ALTER TABLE notifications_new RENAME TO notifications;
+          CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at);
+        `);
+        db.exec("COMMIT");
+      } catch (err) {
+        db.exec("ROLLBACK");
+        throw err;
+      }
+    }
+
+    // Following a member (e.g. a Pueblo Live host) and "Remind me" on a
+    // scheduled stream. Both only ever produce an in-app notification
+    // when the stream actually goes live (see notifyStreamLive).
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS user_follows (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        follower_id INTEGER NOT NULL REFERENCES users(id),
+        followee_id INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (follower_id, followee_id)
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_user_follows_followee ON user_follows(followee_id)`);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS stream_reminders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        stream_id INTEGER NOT NULL REFERENCES streams(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE (stream_id, user_id)
+      )
+    `);
 
     // Contact Us form submissions (see src/app/(site)/contact/ContactForm.tsx
     // and /api/contact) — previously the form just set local state and told
@@ -2761,6 +2815,7 @@ export function createStream(
   // timestamp in this table, not a mix of Node's and SQLite's.
   if (input.goLive) {
     db.prepare("UPDATE streams SET started_at = datetime('now') WHERE id = ?").run(streamId);
+    notifyStreamLive(streamId);
   }
   return getStreamById(streamId, hostId)!;
 }
@@ -2813,6 +2868,7 @@ export function startStream(streamId: number, hostId: number): StreamWithHost {
   db.prepare(
     "UPDATE streams SET status = 'live', started_at = datetime('now') WHERE id = ?"
   ).run(streamId);
+  notifyStreamLive(streamId);
   return getStreamById(streamId, hostId)!;
 }
 
@@ -5625,7 +5681,7 @@ export function listReportFollowerEmails(reportId: number, excludeUserId?: numbe
 // post_comment) that don't have an email counterpart. This table is
 // additive to the email system, not a replacement for it.
 
-export type NotificationKind = "friend_request" | "friend_accepted" | "new_message" | "post_like" | "post_comment";
+export type NotificationKind = "friend_request" | "friend_accepted" | "new_message" | "post_like" | "post_comment" | "stream_live";
 
 export type Notification = {
   id: number;
@@ -6608,6 +6664,9 @@ export function deleteUserAccount(userId: number): DeleteAccountResult {
       ["stream_bans", "user_id"],
       ["stream_comment_reports", "reporter_id"],
       ["neighborhood_report_followers", "user_id"],
+      ["user_follows", "follower_id"],
+      ["user_follows", "followee_id"],
+      ["stream_reminders", "user_id"],
       ["notifications", "user_id"],
       ["notifications", "actor_id"],
       ["email_verification_tokens", "user_id"],
@@ -6640,4 +6699,63 @@ export function deleteUserAccount(userId: number): DeleteAccountResult {
     throw err;
   }
   return { ok: true, files };
+}
+
+// ---------------------------------------------------------------------------
+// Follow a member / remind me about a stream
+// ---------------------------------------------------------------------------
+export function followUser(followerId: number, followeeId: number): void {
+  if (followerId === followeeId) return;
+  getDb()
+    .prepare("INSERT OR IGNORE INTO user_follows (follower_id, followee_id) VALUES (?, ?)")
+    .run(followerId, followeeId);
+}
+
+export function unfollowUser(followerId: number, followeeId: number): void {
+  getDb().prepare("DELETE FROM user_follows WHERE follower_id = ? AND followee_id = ?").run(followerId, followeeId);
+}
+
+export function isFollowingUser(followerId: number, followeeId: number): boolean {
+  return Boolean(
+    getDb().prepare("SELECT 1 AS x FROM user_follows WHERE follower_id = ? AND followee_id = ?").get(followerId, followeeId)
+  );
+}
+
+export function countUserFollowers(userId: number): number {
+  return (getDb().prepare("SELECT COUNT(*) AS c FROM user_follows WHERE followee_id = ?").get(userId) as { c: number }).c;
+}
+
+export function setStreamReminder(streamId: number, userId: number): void {
+  getDb().prepare("INSERT OR IGNORE INTO stream_reminders (stream_id, user_id) VALUES (?, ?)").run(streamId, userId);
+}
+
+export function removeStreamReminder(streamId: number, userId: number): void {
+  getDb().prepare("DELETE FROM stream_reminders WHERE stream_id = ? AND user_id = ?").run(streamId, userId);
+}
+
+export function hasStreamReminder(streamId: number, userId: number): boolean {
+  return Boolean(
+    getDb().prepare("SELECT 1 AS x FROM stream_reminders WHERE stream_id = ? AND user_id = ?").get(streamId, userId)
+  );
+}
+
+export function listReminderStreamIds(userId: number): number[] {
+  return (getDb().prepare("SELECT stream_id AS id FROM stream_reminders WHERE user_id = ?").all(userId) as { id: number }[]).map(
+    (r) => r.id
+  );
+}
+
+// Called once, at the moment a stream becomes live. Tells everyone who
+// follows the host or asked to be reminded (each member once). Returns how
+// many members were notified.
+export function notifyStreamLive(streamId: number): number {
+  const db = getDb();
+  const stream = db.prepare("SELECT host_id FROM streams WHERE id = ?").get(streamId) as { host_id: number } | undefined;
+  if (!stream) return 0;
+  const ids = new Set<number>();
+  for (const r of db.prepare("SELECT follower_id AS id FROM user_follows WHERE followee_id = ?").all(stream.host_id) as { id: number }[]) ids.add(r.id);
+  for (const r of db.prepare("SELECT user_id AS id FROM stream_reminders WHERE stream_id = ?").all(streamId) as { id: number }[]) ids.add(r.id);
+  ids.delete(stream.host_id);
+  for (const uid of ids) createNotification(uid, stream.host_id, "stream_live", "stream", streamId);
+  return ids.size;
 }

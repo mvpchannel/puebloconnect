@@ -9,7 +9,8 @@ import LiveFeatured from "@/components/LiveFeatured";
 import SeeSomethingPromo from "@/components/SeeSomethingPromo";
 import LiveGoLiveButton from "@/components/LiveGoLiveButton";
 import { getCurrentUser } from "@/lib/require-user";
-import { listStreams, getLiveViewerCount, StreamWithHost } from "@/lib/db";
+import { listStreams, getLiveViewerCount, isFollowingUser, listReminderStreamIds, StreamWithHost } from "@/lib/db";
+import LiveToggleButton from "@/components/LiveToggleButton";
 import { PLACEHOLDER } from "@/lib/placeholders";
 import { toEmbedSrc } from "@/lib/stream-embed";
 
@@ -49,6 +50,7 @@ export default async function LivePage() {
     .map((s) => ({ s, watching: getLiveViewerCount(s.id) }))
     .sort((a, b) => b.watching - a.watching);
   const upcoming = listStreams("scheduled", viewerId, 6);
+  const reminderIds = new Set(session ? listReminderStreamIds(session.sub) : []);
   const featured = live[0];
   const others = live.slice(1, 5);
 
@@ -81,6 +83,8 @@ export default async function LivePage() {
                       liked: Boolean(featured.s.liked_by_viewer),
                       commentCount: featured.s.comment_count,
                       watching: featured.watching,
+                      canFollow: session?.sub !== featured.s.host_id,
+                      following: session ? isFollowingUser(session.sub, featured.s.host_id) : false,
                     }}
                   />
                 ) : (
@@ -145,13 +149,26 @@ export default async function LivePage() {
                       <p style={{ color: "#8a97aa", fontSize: 14, margin: 0 }}>Nothing scheduled yet.</p>
                     ) : (
                       upcoming.map((s) => (
-                        <Link key={s.id} href={`/live/${s.id}`} title="" style={{ display: "flex", gap: 12, padding: "10px 0", textDecoration: "none", borderTop: "1px solid #eef2f8" }}>
-                          <div style={{ width: 58, height: 44, borderRadius: 8, backgroundImage: `url(${PLACEHOLDER.stream})`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: 0 }} />
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontWeight: 700, fontSize: 14, color: NAVY, lineHeight: 1.25 }}>{s.title}</div>
-                            <div style={{ fontSize: 12, color: "#6b7a90" }}>{when(s.scheduled_for) || hostName(s)}</div>
-                          </div>
-                        </Link>
+                        <div key={s.id} style={{ display: "flex", gap: 12, padding: "10px 0", alignItems: "center", borderTop: "1px solid #eef2f8" }}>
+                          <Link href={`/live/${s.id}`} title="" style={{ display: "flex", gap: 12, textDecoration: "none", flex: 1, minWidth: 0 }}>
+                            <div style={{ width: 58, height: 44, borderRadius: 8, backgroundImage: `url(${PLACEHOLDER.stream})`, backgroundSize: "cover", backgroundPosition: "center", flexShrink: 0 }} />
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, fontSize: 14, color: NAVY, lineHeight: 1.25 }}>{s.title}</div>
+                              <div style={{ fontSize: 12, color: "#6b7a90" }}>{when(s.scheduled_for) || hostName(s)}</div>
+                            </div>
+                          </Link>
+                          {session?.sub !== s.host_id && (
+                            <LiveToggleButton
+                              endpoint={`/api/streams/${s.id}/reminder`}
+                              initialOn={reminderIds.has(s.id)}
+                              isLoggedIn={Boolean(session)}
+                              labelOff="Remind Me"
+                              labelOn="Reminder set"
+                              variant="outline"
+                              size="sm"
+                            />
+                          )}
+                        </div>
                       ))
                     )}
                   </aside>

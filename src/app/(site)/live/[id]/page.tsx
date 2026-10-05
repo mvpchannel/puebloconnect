@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import LiveToggleButton from "@/components/LiveToggleButton";
 import { notFound } from "next/navigation";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -11,6 +12,8 @@ import { getCurrentUser } from "@/lib/require-user";
 import {
   getStreamById,
   getLiveViewerCount,
+  isFollowingUser,
+  hasStreamReminder,
   getTotalViewerSessionCount,
   getStreamPinnedItem,
   getStreamPollUserVote,
@@ -197,9 +200,33 @@ export default async function StreamDetailPage({
                       <p style={{ margin: "6px 0 0", color: "#4b5b73", fontSize: 14, lineHeight: 1.5 }}>{stream.description}</p>
                     )}
                   </div>
-                  <a href="/live" style={{ color: "#1673f0", fontWeight: 700, fontSize: 14, whiteSpace: "nowrap" }}>
-                    &larr; All streams
-                  </a>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-end" }}>
+                    <a href="/live" style={{ color: "#1673f0", fontWeight: 700, fontSize: 14, whiteSpace: "nowrap" }}>
+                      &larr; All streams
+                    </a>
+                    {!isHost && (
+                      <LiveToggleButton
+                        endpoint={`/api/users/${stream.host_id}/follow`}
+                        initialOn={session ? isFollowingUser(session.sub, stream.host_id) : false}
+                        isLoggedIn={Boolean(session)}
+                        labelOff="Follow"
+                        labelOn="Following"
+                        variant="outline"
+                        size="sm"
+                      />
+                    )}
+                    {!isHost && stream.status === "scheduled" && (
+                      <LiveToggleButton
+                        endpoint={`/api/streams/${stream.id}/reminder`}
+                        initialOn={session ? hasStreamReminder(stream.id, session.sub) : false}
+                        isLoggedIn={Boolean(session)}
+                        labelOff="Remind Me"
+                        labelOn="Reminder set"
+                        variant="solid"
+                        size="sm"
+                      />
+                    )}
+                  </div>
                 </div>
                 <StreamWatchClient
                   streamId={stream.id}

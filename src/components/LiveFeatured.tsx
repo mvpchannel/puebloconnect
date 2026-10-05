@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import LiveToggleButton from "./LiveToggleButton";
 
 export type FeaturedStream = {
   id: number;
@@ -15,6 +16,8 @@ export type FeaturedStream = {
   liked: boolean;
   commentCount: number;
   watching: number;
+  canFollow: boolean; // false when the viewer is the host
+  following: boolean;
 };
 
 type ChatMessage = {
@@ -186,13 +189,25 @@ export default function LiveFeatured({ stream, isLoggedIn }: { stream: FeaturedS
                 <p style={{ margin: "8px 0 0", color: "#4b5b73", fontSize: 14, lineHeight: 1.5 }}>{stream.description}</p>
               )}
             </div>
-            <Link
-              href={`/live/${stream.id}`}
-              title=""
-              style={{ background: "#1673f0", color: "#fff", fontWeight: 700, borderRadius: 10, padding: "10px 22px", textDecoration: "none", whiteSpace: "nowrap" }}
-            >
-              Open stream
-            </Link>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "stretch" }}>
+              <Link
+                href={`/live/${stream.id}`}
+                title=""
+                style={{ background: "#1673f0", color: "#fff", fontWeight: 700, borderRadius: 10, padding: "10px 22px", textDecoration: "none", whiteSpace: "nowrap", textAlign: "center" }}
+              >
+                Open stream
+              </Link>
+              {stream.canFollow && (
+                <LiveToggleButton
+                  endpoint={`/api/users/${stream.hostId}/follow`}
+                  initialOn={stream.following}
+                  isLoggedIn={isLoggedIn}
+                  labelOff="Follow"
+                  labelOn="Following"
+                  variant="outline"
+                />
+              )}
+            </div>
           </div>
 
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 16 }}>
