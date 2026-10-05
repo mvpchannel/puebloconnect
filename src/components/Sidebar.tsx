@@ -94,6 +94,10 @@ export default function Sidebar() {
             <i className="ti-pulse" />
             <Link href="/happening" title="">What&rsquo;s Happening</Link>
           </li>
+          <li>
+            <i className="ti-video-clapper" />
+            <Link href="/media" title="">Media Hub</Link>
+          </li>
         </ul>
       </div>
     </aside>
