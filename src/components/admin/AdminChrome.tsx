@@ -32,6 +32,7 @@ const MORE_LINKS: { href: string; label: string; icon: string }[] = [
   { href: "/admin/stream-moderation", label: "stream moderation", icon: "fa-flag" },
   { href: "/admin/best-of", label: "best of the pueblo", icon: "fa-trophy" },
   { href: "/admin/qr-links", label: "QR codes", icon: "fa-qrcode" },
+  { href: "/admin/we-asked", label: "we asked the pueblo", icon: "fa-question-circle" },
   { href: "/admin/street-team", label: "street team review", icon: "fa-camera" },
   { href: "/admin/booth", label: "the pueblo booth", icon: "fa-microphone" },
   { href: "/admin/spotlights", label: "business spotlight", icon: "fa-star" },

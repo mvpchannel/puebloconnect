@@ -98,6 +98,10 @@ export default function Sidebar() {
             <i className="ti-video-clapper" />
             <Link href="/media" title="">Media Hub</Link>
           </li>
+          <li>
+            <i className="ti-comments" />
+            <Link href="/we-asked" title="">We Asked the Pueblo</Link>
+          </li>
         </ul>
       </div>
     </aside>

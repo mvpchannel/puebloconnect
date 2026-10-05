@@ -305,6 +305,34 @@ function getDb(): DatabaseSync {
       )
     `);
 
+    // We Asked the Pueblo: staff post a question, members answer, staff
+    // approve answers before they are public and can mark some as selected
+    // for The Daily Pueblo. One answer per member per question.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pueblo_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        slug TEXT UNIQUE NOT NULL,
+        question TEXT NOT NULL,
+        context TEXT,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'open', 'closed')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        deleted_at TEXT
+      )
+    `);
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS pueblo_answers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_id INTEGER NOT NULL REFERENCES pueblo_questions(id),
+        user_id INTEGER NOT NULL REFERENCES users(id),
+        body TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+        selected INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        UNIQUE(question_id, user_id)
+      )
+    `);
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS post_likes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -5961,4 +5989,153 @@ export function recordQrScan(code: string): QrLinkRow | undefined {
 
 export function softDeleteQrLink(id: number): void {
   getDb().prepare("UPDATE qr_links SET deleted_at = datetime('now') WHERE id = ?").run(id);
+}
+
+
+// ---------------------------------------------------------------------------
+// We Asked the Pueblo
+// ---------------------------------------------------------------------------
+
+export type PuebloQuestion = {
+  id: number;
+  slug: string;
+  question: string;
+  context: string | null;
+  status: "draft" | "open" | "closed";
+  created_at: string;
+  approved_count: number;
+  pending_count: number;
+};
+
+const PQ_SELECT = `
+  SELECT q.id, q.slug, q.question, q.context, q.status, q.created_at,
+    (SELECT COUNT(*) FROM pueblo_answers a WHERE a.question_id = q.id AND a.status = 'approved') AS approved_count,
+    (SELECT COUNT(*) FROM pueblo_answers a WHERE a.question_id = q.id AND a.status = 'pending') AS pending_count
+  FROM pueblo_questions q
+`;
+
+export type PuebloQuestionInput = { question: string; context: string | null; status: "draft" | "open" | "closed" };
+
+export function createPuebloQuestion(input: PuebloQuestionInput): PuebloQuestion {
+  const db = getDb();
+  const base = slugify(input.question).slice(0, 60) || "question";
+  let slug = base;
+  let n = 2;
+  while (db.prepare("SELECT id FROM pueblo_questions WHERE slug = ?").get(slug)) slug = `${base}-${n++}`;
+  const info = db
+    .prepare("INSERT INTO pueblo_questions (slug, question, context, status) VALUES (?, ?, ?, ?)")
+    .run(slug, input.question, input.context, input.status);
+  return getPuebloQuestionById(Number(info.lastInsertRowid))!;
+}
+
+export function updatePuebloQuestion(id: number, input: PuebloQuestionInput): PuebloQuestion | undefined {
+  const db = getDb();
+  if (!getPuebloQuestionById(id)) return undefined;
+  db.prepare("UPDATE pueblo_questions SET question = ?, context = ?, status = ? WHERE id = ?").run(
+    input.question, input.context, input.status, id
+  );
+  return getPuebloQuestionById(id);
+}
+
+export function getPuebloQuestionById(id: number): PuebloQuestion | undefined {
+  return getDb().prepare(`${PQ_SELECT} WHERE q.id = ? AND q.deleted_at IS NULL`).get(id) as PuebloQuestion | undefined;
+}
+
+// Public lookup: drafts are never visible.
+export function getPublicPuebloQuestionBySlug(slug: string): PuebloQuestion | undefined {
+  return getDb()
+    .prepare(`${PQ_SELECT} WHERE q.slug = ? AND q.status != 'draft' AND q.deleted_at IS NULL`)
+    .get(slug) as PuebloQuestion | undefined;
+}
+
+export function listPuebloQuestions(opts: { publicOnly: boolean }): PuebloQuestion[] {
+  const where = opts.publicOnly ? "q.status != 'draft' AND q.deleted_at IS NULL" : "q.deleted_at IS NULL";
+  return getDb().prepare(`${PQ_SELECT} WHERE ${where} ORDER BY q.id DESC`).all() as PuebloQuestion[];
+}
+
+export function softDeletePuebloQuestion(id: number): void {
+  getDb().prepare("UPDATE pueblo_questions SET deleted_at = datetime('now') WHERE id = ?").run(id);
+}
+
+export type PuebloAnswer = {
+  id: number;
+  question_id: number;
+  user_id: number;
+  body: string;
+  status: "pending" | "approved" | "rejected";
+  selected: number;
+  created_at: string;
+  first_name: string | null;
+  last_name: string | null;
+  username: string;
+  city: string | null;
+  question_text: string;
+  question_slug: string;
+};
+
+const PA_SELECT = `
+  SELECT a.id, a.question_id, a.user_id, a.body, a.status, a.selected, a.created_at,
+         u.first_name, u.last_name, u.username, u.city,
+         q.question AS question_text, q.slug AS question_slug
+  FROM pueblo_answers a
+  JOIN users u ON u.id = a.user_id
+  JOIN pueblo_questions q ON q.id = a.question_id
+`;
+
+// A member's answer: new, or an edit of their earlier one (which goes back to
+// pending review and loses any "selected" mark, since the text changed).
+export function submitPuebloAnswer(questionId: number, userId: number, body: string): PuebloAnswer {
+  const db = getDb();
+  db.prepare(
+    `INSERT INTO pueblo_answers (question_id, user_id, body) VALUES (?, ?, ?)
+     ON CONFLICT(question_id, user_id) DO UPDATE SET
+       body = excluded.body, status = 'pending', selected = 0, updated_at = datetime('now')`
+  ).run(questionId, userId, body);
+  return getPuebloAnswerForUser(questionId, userId)!;
+}
+
+export function getPuebloAnswerForUser(questionId: number, userId: number): PuebloAnswer | undefined {
+  return getDb()
+    .prepare(`${PA_SELECT} WHERE a.question_id = ? AND a.user_id = ?`)
+    .get(questionId, userId) as PuebloAnswer | undefined;
+}
+
+export function getPuebloAnswerById(id: number): PuebloAnswer | undefined {
+  return getDb().prepare(`${PA_SELECT} WHERE a.id = ?`).get(id) as PuebloAnswer | undefined;
+}
+
+export function listApprovedPuebloAnswers(questionId: number): PuebloAnswer[] {
+  return getDb()
+    .prepare(`${PA_SELECT} WHERE a.question_id = ? AND a.status = 'approved' ORDER BY a.selected DESC, a.id DESC`)
+    .all(questionId) as PuebloAnswer[];
+}
+
+// Admin: everything for a question, pending first.
+export function listPuebloAnswersForAdmin(questionId: number): PuebloAnswer[] {
+  return getDb()
+    .prepare(
+      `${PA_SELECT} WHERE a.question_id = ?
+       ORDER BY CASE a.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, a.id DESC`
+    )
+    .all(questionId) as PuebloAnswer[];
+}
+
+// Only approved answers can be selected; rejecting or re-pending clears the mark.
+export function moderatePuebloAnswer(
+  id: number,
+  change: { status?: "pending" | "approved" | "rejected"; selected?: boolean }
+): PuebloAnswer | undefined {
+  const db = getDb();
+  const cur = getPuebloAnswerById(id);
+  if (!cur) return undefined;
+  const status = change.status ?? cur.status;
+  const selected = status === "approved" ? (change.selected ?? Boolean(cur.selected)) : false;
+  db.prepare("UPDATE pueblo_answers SET status = ?, selected = ?, updated_at = datetime('now') WHERE id = ?").run(
+    status, selected ? 1 : 0, id
+  );
+  return getPuebloAnswerById(id);
+}
+
+export function deletePuebloAnswer(id: number): void {
+  getDb().prepare("DELETE FROM pueblo_answers WHERE id = ?").run(id);
 }
