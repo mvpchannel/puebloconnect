@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
 import { isAllowedStreamUrl } from "@/lib/safe-url";
+import { processEmailQueue } from "@/lib/email";
 import { createStream, listStreams, getLiveViewerCount, StreamPlatform, StreamStatus, StreamWithHost } from "@/lib/db";
 
 const VALID_PLATFORMS: StreamPlatform[] = ["youtube", "facebook", "vimeo"];
@@ -122,5 +123,6 @@ export async function POST(req: NextRequest) {
     goLive: goLive === true,
   });
 
+  if (goLive === true) void processEmailQueue();
   return NextResponse.json({ stream: shapeStream(stream) }, { status: 201 });
 }

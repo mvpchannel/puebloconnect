@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
-import { getUserById, updateUserNotificationPreferences } from "@/lib/db";
+import { getUserById, updateUserNotificationPreferences, setLiveEmailsEnabled } from "@/lib/db";
 
 // GET/POST /api/account/notification-preferences — the backend half of
 // "notification preferences separating security emails from marketing
@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Not logged in." }, { status: 401 });
   return NextResponse.json({
     marketingEmailsOptIn: Boolean(user.marketing_emails_opt_in),
+    liveEmailsEnabled: !user.live_emails_opt_out,
   });
 }
 
@@ -34,11 +35,18 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
-  const { marketingEmailsOptIn } = (body ?? {}) as Record<string, unknown>;
-  if (typeof marketingEmailsOptIn !== "boolean") {
+  const { marketingEmailsOptIn, liveEmailsEnabled } = (body ?? {}) as Record<string, unknown>;
+  if (marketingEmailsOptIn === undefined && liveEmailsEnabled === undefined) {
+    return NextResponse.json({ error: "Nothing to update." }, { status: 400 });
+  }
+  if (marketingEmailsOptIn !== undefined && typeof marketingEmailsOptIn !== "boolean") {
     return NextResponse.json({ error: "marketingEmailsOptIn must be a boolean." }, { status: 400 });
   }
+  if (liveEmailsEnabled !== undefined && typeof liveEmailsEnabled !== "boolean") {
+    return NextResponse.json({ error: "liveEmailsEnabled must be a boolean." }, { status: 400 });
+  }
 
-  updateUserNotificationPreferences(session.sub, marketingEmailsOptIn);
-  return NextResponse.json({ ok: true, marketingEmailsOptIn });
+  if (typeof marketingEmailsOptIn === "boolean") updateUserNotificationPreferences(session.sub, marketingEmailsOptIn);
+  if (typeof liveEmailsEnabled === "boolean") setLiveEmailsEnabled(session.sub, liveEmailsEnabled);
+  return NextResponse.json({ ok: true, marketingEmailsOptIn, liveEmailsEnabled });
 }

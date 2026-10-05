@@ -74,6 +74,11 @@ const USER_COLUMN_MIGRATIONS: { name: string; ddl: string }[] = [
       "ALTER TABLE users ADD COLUMN session_version INTEGER NOT NULL DEFAULT 1",
   },
   {
+    // 1 = the member turned OFF "email me when a followed host / reminded stream goes live".
+    name: "live_emails_opt_out",
+    ddl: "ALTER TABLE users ADD COLUMN live_emails_opt_out INTEGER NOT NULL DEFAULT 0",
+  },
+  {
     // Marketing/promotional email opt-in. Defaults to 0 (off) — never
     // auto-subscribe anyone. Security/account emails are not optional and
     // are not gated by this column at all (see email.ts).
@@ -1329,6 +1334,7 @@ export type User = {
   last_login_at: string | null;
   session_version: number;
   marketing_emails_opt_in: number;
+  live_emails_opt_out: number;
   latitude: number | null;
   longitude: number | null;
   location_city: string | null;
@@ -1345,7 +1351,7 @@ export type PublicUser = Omit<User, "password_hash">;
 const PUBLIC_USER_COLUMNS =
   "id, username, email, role, created_at, first_name, last_name, city, " +
   "profile_photo_path, email_verified_at, account_status, updated_at, " +
-  "last_login_at, session_version, marketing_emails_opt_in, " +
+  "last_login_at, session_version, marketing_emails_opt_in, live_emails_opt_out, " +
   "latitude, longitude, location_city, location_region, location_country, " +
   "location_source, location_updated_at, bio, cover_photo_path";
 
@@ -1587,6 +1593,12 @@ export function updateUserNotificationPreferences(
   db.prepare(
     "UPDATE users SET marketing_emails_opt_in = ?, updated_at = datetime('now') WHERE id = ?"
   ).run(marketingEmailsOptIn ? 1 : 0, userId);
+}
+
+export function setLiveEmailsEnabled(userId: number, enabled: boolean): void {
+  getDb()
+    .prepare("UPDATE users SET live_emails_opt_out = ?, updated_at = datetime('now') WHERE id = ?")
+    .run(enabled ? 0 : 1, userId);
 }
 
 // Backs the real "Edit Profile" form — the first/last name, city, and
@@ -2685,7 +2697,7 @@ export function countUnreadMessages(userId: number): number {
 // src/lib/email.ts (processEmailQueue there reads/writes through these
 // functions so this file stays the only thing that touches SQLite).
 
-export type QueuedEmailKind = "friend_request" | "friend_accepted" | "new_message" | "report_status_update";
+export type QueuedEmailKind = "friend_request" | "friend_accepted" | "new_message" | "report_status_update" | "stream_live";
 
 export type QueuedEmail = {
   id: number;
@@ -6756,6 +6768,31 @@ export function notifyStreamLive(streamId: number): number {
   for (const r of db.prepare("SELECT follower_id AS id FROM user_follows WHERE followee_id = ?").all(stream.host_id) as { id: number }[]) ids.add(r.id);
   for (const r of db.prepare("SELECT user_id AS id FROM stream_reminders WHERE stream_id = ?").all(streamId) as { id: number }[]) ids.add(r.id);
   ids.delete(stream.host_id);
-  for (const uid of ids) createNotification(uid, stream.host_id, "stream_live", "stream", streamId);
+
+  const info = db
+    .prepare(
+      `SELECT s.title, u.username, u.first_name, u.last_name FROM streams s JOIN users u ON u.id = s.host_id WHERE s.id = ?`
+    )
+    .get(streamId) as { title: string; username: string; first_name: string | null; last_name: string | null };
+  const hostName = [info.first_name, info.last_name].filter(Boolean).join(" ") || info.username;
+
+  for (const uid of ids) {
+    createNotification(uid, stream.host_id, "stream_live", "stream", streamId);
+
+    // Email too — unless the member turned live emails off, the account is
+    // gone, or they already got one in the last 30 minutes (a host going
+    // live repeatedly must not flood anyone's inbox).
+    const u = db
+      .prepare("SELECT email, account_status, live_emails_opt_out FROM users WHERE id = ?")
+      .get(uid) as { email: string; account_status: string; live_emails_opt_out: number } | undefined;
+    if (!u || u.account_status !== "active" || u.live_emails_opt_out) continue;
+    const recent = db
+      .prepare(
+        "SELECT COUNT(*) AS c FROM queued_emails WHERE to_address = ? AND kind = 'stream_live' AND created_at > datetime('now', '-30 minutes')"
+      )
+      .get(u.email) as { c: number };
+    if (recent.c > 0) continue;
+    enqueueEmail(u.email, "stream_live", { hostName, title: info.title, streamId: String(streamId) });
+  }
   return ids.size;
 }

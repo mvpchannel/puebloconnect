@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
 import { startStream } from "@/lib/db";
+import { processEmailQueue } from "@/lib/email";
 
 // POST /api/streams/:id/start — host goes live on a scheduled stream.
 export async function POST(
@@ -17,6 +18,7 @@ export async function POST(
 
   try {
     const stream = startStream(streamId, session.sub);
+    void processEmailQueue();
     return NextResponse.json({ status: stream.status, startedAt: stream.started_at });
   } catch (err) {
     return NextResponse.json(

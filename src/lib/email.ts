@@ -69,6 +69,7 @@ export type EmailKind =
   | "password_reset"
   | "password_changed"
   | "account_deleted"
+  | "stream_live"
   | "friend_request"
   | "friend_accepted"
   | "new_message"
@@ -172,6 +173,15 @@ function accountDeletedTemplate(): string {
   `);
 }
 
+function streamLiveTemplate(hostName: string, title: string, url: string): string {
+  return wrapHtml(`
+    <p style="font-size:18px;font-weight:bold;margin-top:0;">${escapeHtml(hostName)} is live now</p>
+    <p>${escapeHtml(title)}</p>
+    ${button(url, "WATCH ON PUEBLO LIVE")}
+    <p style="color:#888;font-size:12px;">You&rsquo;re getting this because you follow ${escapeHtml(hostName)} or asked to be reminded about this stream. Turn these emails off in Account Settings &rarr; Email Preferences.</p>
+  `);
+}
+
 function emailVerifiedTemplate(): string {
   return wrapHtml(`
     <p style="font-size:18px;font-weight:bold;margin-top:0;">WELCOME TO PUEBLO CONNECT</p>
@@ -221,6 +231,16 @@ export function buildPasswordChangedEmail(to: string): EmailMessage {
       "Your Pueblo Connect password was successfully changed.\n\n" +
       "If you made this change, no further action is required.\n" +
       "If you did not make this change, contact Pueblo Connect immediately.",
+  };
+}
+
+export function buildStreamLiveEmail(to: string, hostName: string, title: string, streamId: string): EmailMessage {
+  const url = `${APP_URL}/live/${encodeURIComponent(streamId)}`;
+  return {
+    to,
+    subject: `${hostName} is live now on Pueblo Live`,
+    html: streamLiveTemplate(hostName, title, url),
+    text: `${hostName} is live now: ${title}\n\nWatch: ${url}\n\nTurn these emails off in Account Settings > Email Preferences.`,
   };
 }
 
@@ -447,6 +467,8 @@ function templateForQueuedEmail(email: QueuedEmail): EmailMessage {
       return buildFriendAcceptedEmail(email.to_address, payload.fromName);
     case "new_message":
       return buildNewMessageEmail(email.to_address, payload.fromName);
+    case "stream_live":
+      return buildStreamLiveEmail(email.to_address, payload.hostName, payload.title, payload.streamId);
     case "report_status_update":
       return buildReportStatusUpdateEmail(
         email.to_address,

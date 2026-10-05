@@ -92,6 +92,7 @@ export default async function AccountSettingsPage() {
                         <h5 className="f-title"><i className="ti-bell" /> Email Preferences</h5>
                         <NotificationPreferencesForm
                           initialOptIn={Boolean(user.marketing_emails_opt_in)}
+                          initialLiveEmails={!user.live_emails_opt_out}
                         />
                       </div>
                     </div>
