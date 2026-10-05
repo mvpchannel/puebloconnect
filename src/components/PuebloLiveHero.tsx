@@ -34,7 +34,7 @@ export default function PuebloLiveHero({ isLoggedIn }: { isLoggedIn: boolean }) 
             Your Community. <span style={{ color: "#1673f0" }}>Live.</span>
           </div>
           <div style={{ color: "#4b5b73", fontSize: 14, marginTop: 4 }}>
-            Local People &bull; Local Businesses &bull; Local Events &bull; Real Conversations
+            Northeast Los Angeles &bull; Local People &bull; Local Businesses &bull; Local Events
           </div>
         </div>
       </div>

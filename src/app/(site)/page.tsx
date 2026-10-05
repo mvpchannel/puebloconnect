@@ -121,8 +121,8 @@ export default async function LandingPage() {
       <section className="landing-hero">
         <h1>Connect Local. Shop Local. Grow Together.</h1>
         <p>
-          Pueblo Connect is the community-focused social network for Pueblo
-          residents and local businesses — powered by The Daily Pueblo.
+          Pueblo Connect is the community-focused social network for Northeast
+          Los Angeles residents and local businesses — powered by The Daily Pueblo.
           Free to use, for as long as you want.
         </p>
         <div className="landing-hero-ctas">
