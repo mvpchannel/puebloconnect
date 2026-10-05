@@ -48,6 +48,8 @@ export type CityEngineOptions = {
   playerName: string;
   onPlaceClick: (place: Place) => void;
   onReady?: () => void;
+  /** Buildings to place. Defaults to the built-in sample set. */
+  places?: Place[];
 };
 
 export type CityEngine = {
@@ -212,7 +214,7 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     scene.add(sign);
     destinations[p.id] = new THREE.Vector3(p.x, 1.1, p.z + Math.sign(p.z || 1) * (p.depth / 2 + 7));
   }
-  PLACES.forEach(addBuilding);
+  (opts.places ?? PLACES).forEach(addBuilding);
 
   // --- Local player avatar -------------------------------------------
   const player = new THREE.Group();

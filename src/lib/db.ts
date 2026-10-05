@@ -622,6 +622,15 @@ function getDb(): DatabaseSync {
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_businesses_owner ON businesses(owner_id)`);
 
+    // 3D Business Storefronts: a business with storefront_lot set has a
+    // building in the 3D Pueblo (see src/lib/pueblo3d/storefronts.ts).
+    if (!columnExists(db, "businesses", "storefront_lot")) {
+      db.exec("ALTER TABLE businesses ADD COLUMN storefront_lot INTEGER");
+    }
+    if (!columnExists(db, "businesses", "storefront_color")) {
+      db.exec("ALTER TABLE businesses ADD COLUMN storefront_color TEXT");
+    }
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS business_followers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -6138,4 +6147,64 @@ export function moderatePuebloAnswer(
 
 export function deletePuebloAnswer(id: number): void {
   getDb().prepare("DELETE FROM pueblo_answers WHERE id = ?").run(id);
+}
+
+
+// ---------------------------------------------------------------------------
+// 3D Business Storefronts
+// ---------------------------------------------------------------------------
+
+export const STOREFRONT_LOTS = 7; // building lots available along the storefront row
+
+export type StorefrontBusiness = {
+  id: number;
+  name: string;
+  slug: string;
+  category: string;
+  description: string | null;
+  storefront_lot: number | null;
+  storefront_color: string | null;
+};
+
+const STOREFRONT_COLUMNS = "id, name, slug, category, description, storefront_lot, storefront_color";
+
+// Every business with its storefront state, for the admin screen.
+export function listBusinessesWithStorefrontState(): StorefrontBusiness[] {
+  return getDb()
+    .prepare(`SELECT ${STOREFRONT_COLUMNS} FROM businesses ORDER BY name COLLATE NOCASE`)
+    .all() as StorefrontBusiness[];
+}
+
+// Businesses that currently have a building in the 3D Pueblo.
+export function listStorefronts(): StorefrontBusiness[] {
+  return getDb()
+    .prepare(`SELECT ${STOREFRONT_COLUMNS} FROM businesses WHERE storefront_lot IS NOT NULL ORDER BY storefront_lot`)
+    .all() as StorefrontBusiness[];
+}
+
+// Gives a business a building on the lowest free lot (or just recolors it if it
+// already has one). Returns an error string when every lot is taken.
+export function enableStorefront(businessId: number, color: string): { ok: true; lot: number } | { error: string } {
+  const db = getDb();
+  const biz = db
+    .prepare("SELECT id, storefront_lot FROM businesses WHERE id = ?")
+    .get(businessId) as { id: number; storefront_lot: number | null } | undefined;
+  if (!biz) return { error: "Business not found." };
+  if (biz.storefront_lot !== null) {
+    db.prepare("UPDATE businesses SET storefront_color = ? WHERE id = ?").run(color, businessId);
+    return { ok: true, lot: biz.storefront_lot };
+  }
+  const used = new Set(
+    (db.prepare("SELECT storefront_lot FROM businesses WHERE storefront_lot IS NOT NULL").all() as { storefront_lot: number }[])
+      .map((r) => r.storefront_lot)
+  );
+  let lot = -1;
+  for (let i = 0; i < STOREFRONT_LOTS; i++) if (!used.has(i)) { lot = i; break; }
+  if (lot < 0) return { error: `All ${STOREFRONT_LOTS} storefront lots are in use. Remove one first.` };
+  db.prepare("UPDATE businesses SET storefront_lot = ?, storefront_color = ? WHERE id = ?").run(lot, color, businessId);
+  return { ok: true, lot };
+}
+
+export function disableStorefront(businessId: number): void {
+  getDb().prepare("UPDATE businesses SET storefront_lot = NULL, storefront_color = NULL WHERE id = ?").run(businessId);
 }

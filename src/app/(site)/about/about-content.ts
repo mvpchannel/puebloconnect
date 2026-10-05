@@ -78,7 +78,7 @@ export const GROUPS: ProgramGroup[] = [
     icon: "ti-world",
     programs: [
       { name: "Explore the Pueblo in 3D", status: "prototype", href: "/explore-3d", description: "A virtual version of the Pueblo you can walk through, discovering businesses, The Daily Pueblo, Pueblo HQ and community destinations. Movement, destinations and navigation work today; the social and business features come next." },
-      { name: "3D Business Storefronts", status: "soon", description: "Branded locations inside the 3D Pueblo — walk up, click, and see a business's profile, deal, menu, website or video." },
+      { name: "3D Business Storefronts", status: "prototype", href: "/explore-3d", description: "Branded locations inside the 3D Pueblo — walk up, click, and see a business's profile, deal, menu, website or video. Today a business can have a colored building that opens its business page; custom designs, interiors and in-world deals come next." },
       { name: "360° Virtual Business Tours", status: "soon", description: "Walk to a business in the 3D Pueblo, select ENTER BUSINESS, and explore the real interior through connected 360° views." },
       { name: "Pueblo 3D Advertising", status: "soon", description: "Billboards, building signs, banners and sponsored areas inside the virtual community." },
       { name: "Pueblo Drops / Treasure Hunts", status: "soon", description: "Digital prizes, coupons and “Golden Pueblo Tickets” hidden in the 3D Pueblo — a reason to keep coming back." },

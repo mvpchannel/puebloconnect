@@ -36,6 +36,8 @@ export type Place = {
    */
   href?: string;
   hrefLabel?: string;
+  /** True for illustrative placeholder buildings that are not real businesses. */
+  sample?: boolean;
 };
 
 export const PLACES: Place[] = [
@@ -74,6 +76,7 @@ export const PLACES: Place[] = [
     name: "Pueblo Café",
     category: "business",
     categoryLabel: "LOCAL BUSINESS",
+    sample: true,
     description: "Coffee, breakfast and a neighborhood place to connect. Sample business — not a real Pueblo Connect member yet.",
     x: -30,
     z: 28,
@@ -87,6 +90,7 @@ export const PLACES: Place[] = [
     name: "Pueblo Market",
     category: "business",
     categoryLabel: "LOCAL BUSINESS",
+    sample: true,
     description: "Local groceries, fresh food and community specials. Sample business — not a real Pueblo Connect member yet.",
     x: 30,
     z: 28,
@@ -100,6 +104,7 @@ export const PLACES: Place[] = [
     name: "Main Street Grill",
     category: "business",
     categoryLabel: "LOCAL BUSINESS",
+    sample: true,
     description: "Neighborhood food and specials. Sample business — not a real Pueblo Connect member yet.",
     x: -55,
     z: 28,
@@ -113,6 +118,7 @@ export const PLACES: Place[] = [
     name: "Pueblo Books & Arts",
     category: "business",
     categoryLabel: "LOCAL BUSINESS",
+    sample: true,
     description: "Books, local authors, art and community creativity. Sample business — not a real Pueblo Connect member yet.",
     x: 55,
     z: 28,
@@ -126,6 +132,7 @@ export const PLACES: Place[] = [
     name: "Pueblo Family Shop",
     category: "business",
     categoryLabel: "LOCAL BUSINESS",
+    sample: true,
     description: "A locally owned neighborhood store. Sample business — not a real Pueblo Connect member yet.",
     x: 55,
     z: -30,
@@ -139,3 +146,8 @@ export const PLACES: Place[] = [
 export function getPlaceById(id: string): Place | undefined {
   return PLACES.find((p) => p.id === id);
 }
+
+// The community and news buildings, which are always in the city.
+export const LANDMARKS: Place[] = PLACES.filter((p) => !p.sample);
+// Placeholder businesses, shown only while no real business has a storefront.
+export const SAMPLE_BUSINESSES: Place[] = PLACES.filter((p) => p.sample);

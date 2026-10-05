@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Link from "next/link";
 import styles from "./explore-3d.module.css";
-import { PLACES, type Place } from "@/lib/pueblo3d/places";
+import type { Place } from "@/lib/pueblo3d/places";
 import type { CityEngine } from "@/lib/pueblo3d/engine";
 
 type SessionUser = { id: number; username: string; email: string; role: "member" | "admin" };
@@ -33,7 +33,7 @@ type MoveDir = "forward" | "backward" | "left" | "right";
  * lives in src/lib/pueblo3d/engine.ts, which this mounts into a plain div
  * ref inside a browser-only effect (avoids any SSR/WebGL mismatch).
  */
-export default function Explore3DClient() {
+export default function Explore3DClient({ places }: { places: Place[] }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [userLoaded, setUserLoaded] = useState(false);
   const [ready, setReady] = useState(false);
@@ -82,6 +82,7 @@ export default function Explore3DClient() {
         playerName,
         onPlaceClick: handlePlaceClick,
         onReady: () => setReady(true),
+        places,
       });
       engineRef.current = engine;
     });
@@ -168,10 +169,10 @@ export default function Explore3DClient() {
             <h2>{selectedPlace.name}</h2>
             <p>{selectedPlace.description}</p>
 
-            {selectedPlace.category === "business" && (
+            {selectedPlace.sample && (
               <p className={styles.statusNote}>
-                Business profiles and Pueblo Deals aren&apos;t built yet — this is sample
-                content for the prototype, not a real Pueblo Connect business.
+                This is a sample building for the prototype, not a real Pueblo Connect
+                business.
               </p>
             )}
             {selectedPlace.category === "news" && (
@@ -209,7 +210,7 @@ export default function Explore3DClient() {
             <h2>Pueblo City Map</h2>
             <p>Choose a destination.</p>
             <div className={styles.destinations}>
-              {PLACES.map((p) => (
+              {places.map((p) => (
                 <button key={p.id} type="button" onClick={() => teleport(p.id)}>
                   {p.name}
                 </button>
