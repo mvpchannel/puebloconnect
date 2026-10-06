@@ -27,8 +27,11 @@ export const metadata: Metadata = {
   },
   description: SITE_DESCRIPTION,
   icons: {
-    icon: "/images/fav.png",
-    apple: "/icons/icon-192.png",
+    icon: [
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/images/fav.png", type: "image/png", sizes: "256x256" },
+    ],
+    apple: "/icons/apple-touch-icon.png",
   },
   manifest: "/manifest.webmanifest",
   appleWebApp: {
