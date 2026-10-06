@@ -194,6 +194,16 @@ function getDb(): DatabaseSync {
     // restart and work the same in a single-process deployment. Keyed by
     // an arbitrary "bucket" (e.g. "login:ip:1.2.3.4" or
     // "login:user:someone") + a time window; see rate-limit.ts.
+    // Small key/value settings staff can change from the admin area (e.g. the
+    // social media addresses shown in the site footer).
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS site_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+
     db.exec(`
       CREATE TABLE IF NOT EXISTS rate_limit_attempts (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3494,6 +3504,30 @@ export function listBusinessReviews(businessId: number, limit = 100): BusinessRe
   return db
     .prepare(`${BUSINESS_REVIEW_SELECT} WHERE br.business_id = ? ORDER BY br.created_at DESC LIMIT ?`)
     .all(businessId, limit) as BusinessReviewWithUser[];
+}
+
+export function getSiteSettings(keys: string[]): Record<string, string> {
+  const db = getDb();
+  const out: Record<string, string> = {};
+  const stmt = db.prepare("SELECT value FROM site_settings WHERE key = ?");
+  for (const k of keys) {
+    const row = stmt.get(k) as { value: string } | undefined;
+    if (row) out[k] = row.value;
+  }
+  return out;
+}
+
+// An empty or null value removes the setting.
+export function setSiteSetting(key: string, value: string | null): void {
+  const db = getDb();
+  if (!value) {
+    db.prepare("DELETE FROM site_settings WHERE key = ?").run(key);
+    return;
+  }
+  db.prepare(
+    `INSERT INTO site_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
+  ).run(key, value);
 }
 
 export type AdminLocationRow = {

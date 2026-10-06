@@ -1,4 +1,5 @@
 import Link from "next/link";
+import FooterFollow from "@/components/FooterFollow";
 
 /**
  * Shared site footer, ported from the markup duplicated across all 63
@@ -8,8 +9,8 @@ import Link from "next/link";
  *  - The original tagline said "...world's leading carpooling platform"
  *    (leftover from the template vendor's rideshare demo) — corrected.
  *  - The original social links pointed to real, unrelated third-party
- *    accounts (e.g. facebook.com/shopcircut) — replaced with "#" placeholders
- *    until Pueblo Connect's real social accounts are known.
+ *    accounts (e.g. facebook.com/shopcircut) — replaced; the Follow column now shows
+ *    the addresses staff enter in Admin > Connect accounts (nothing if none set).
  *  - The address/phone were a fake San Francisco office (template leftover).
  *    Left as an explicit placeholder rather than inventing a real one —
  *    needs The Daily Pueblo's actual contact details.
@@ -45,16 +46,7 @@ export default function Footer() {
                 </ul>
               </div>
             </div>
-            <div className="col-lg-2 col-md-4">
-              <div className="widget">
-                <div className="widget-title"><h4>Follow</h4></div>
-                <ul className="list-style">
-                  <li><i className="fa fa-facebook-square" /> <a href="#" title="Facebook">Facebook</a></li>
-                  <li><i className="fa fa-twitter-square" /> <a href="#" title="Twitter">Twitter</a></li>
-                  <li><i className="fa fa-instagram" /> <a href="#" title="Instagram">Instagram</a></li>
-                </ul>
-              </div>
-            </div>
+            <FooterFollow />
             <div className="col-lg-2 col-md-4">
               <div className="widget">
                 <div className="widget-title"><h4>Navigate</h4></div>
