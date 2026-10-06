@@ -34,6 +34,16 @@ import * as THREE from "three";
 import { PLACES, type Place } from "./places";
 import { avatarLookFor, BUNTING_X, PALM_SPOTS, ROUTES, routeLength, routePose } from "./decor";
 import { createFigureKit, type Figure } from "./figures";
+import {
+  HOTSPOTS,
+  INTERIOR_OFFSET_X,
+  nearestHotspot,
+  resolveMove,
+  ROOM,
+  SPAWN,
+  TABLES,
+  type HotspotId,
+} from "./interior";
 
 export type RemotePlayerState = {
   id: string;
@@ -58,6 +68,12 @@ export type CityEngineOptions = {
   drops?: DropMarker[];
   /** Called when a drop is clicked; `near` is whether the avatar is close enough to grab it. */
   onDropClick?: (id: number, near: boolean) => void;
+  /** Called with the business the avatar just walked into, or null when it walks back out. */
+  onInteriorChange?: (place: Place | null) => void;
+  /** The thing inside a business the avatar is standing next to (null when nothing). */
+  onPrompt?: (prompt: { id: HotspotId; label: string } | null) => void;
+  /** Called when the member uses something inside (deal board, menu, screen, host). `near` is false when they clicked it from too far away. */
+  onInteract?: (id: HotspotId, place: Place, near: boolean) => void;
 };
 
 export type DropMarker = { id: number; x: number; z: number; golden: boolean };
@@ -70,6 +86,12 @@ export const DROP_PICKUP_RADIUS = 14;
 export type CityEngine = {
   /** Walk the local avatar to a named destination (used by the map/HUD). */
   teleportTo: (placeId: string) => void;
+  /** Walk the avatar to a business's front door and in. Returns false if that place has no interior. */
+  enterPlace: (placeId: string) => boolean;
+  /** Walk back out to the street in front of the business. */
+  exitPlace: () => void;
+  /** Use whatever the avatar is standing next to inside a business (same as pressing E). */
+  interact: () => void;
   /** Remove a drop's marker from the scene (after it has been claimed). */
   removeDrop: (id: number) => void;
   /** Multiplayer extension point — see module header. Unused in Phase 1. */
@@ -101,7 +123,8 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   container.appendChild(renderer.domElement);
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x526342, 2.2));
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x526342, 2.2);
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xffffff, 2.4);
   sun.position.set(35, 55, 20);
   sun.castShadow = true;
@@ -610,6 +633,268 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     }
   });
 
+  // --- Inside a business -------------------------------------------------
+  // Walk through a business's front door and the scene switches to a room built
+  // far away from the city. Every interior is generated in code, uses the same
+  // layout (see interior.ts), and carries the Pueblo Connect logo. Counter,
+  // deal board, menu board, screen and host are things the member can use.
+  let mode: "city" | "interior" = "city";
+  type Built = { group: THREE.Group; clickables: THREE.Object3D[]; place: Place };
+  const interiors = new Map<string, Built>();
+  let activeInterior: Built | null = null;
+  let autoWalk: { x: number; z: number; done: () => void } | null = null;
+  let doorCooldown = 0;
+  let lastPromptId: HotspotId | null = null;
+  const enterable = (opts.places ?? PLACES).filter((p) => p.category === "business");
+
+  const logoLoader = new THREE.TextureLoader();
+  const logoTex = track(logoLoader.load("/images/brand/pueblo-connect-logo.png"));
+  logoTex.colorSpace = THREE.SRGBColorSpace;
+  const lockupTex = track(logoLoader.load("/images/brand/pueblo-connect-lockup.png"));
+  lockupTex.colorSpace = THREE.SRGBColorSpace;
+
+  function boardTexture(lines: string[], bg: string, fg: string, accent = "#f4c542") {
+    const c = document.createElement("canvas");
+    c.width = 640;
+    c.height = 340;
+    const g = c.getContext("2d")!;
+    g.fillStyle = bg;
+    g.fillRect(0, 0, c.width, c.height);
+    g.strokeStyle = accent;
+    g.lineWidth = 10;
+    g.strokeRect(12, 12, c.width - 24, c.height - 24);
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    const sizes = [34, 50, 34, 28];
+    const fit = (t: string, size: number) => {
+      g.font = `bold ${size}px Arial`;
+      while (g.measureText(t).width > c.width - 70 && size > 18) {
+        size -= 2;
+        g.font = `bold ${size}px Arial`;
+      }
+    };
+    const rows = lines.slice(0, 4);
+    const lineH = (c.height - 70) / rows.length;
+    rows.forEach((t, i) => {
+      const txt = t.length > 40 ? `${t.slice(0, 39)}…` : t;
+      g.fillStyle = i === 0 ? accent : fg;
+      fit(txt, sizes[i] ?? 28);
+      g.fillText(txt, c.width / 2, 35 + lineH * (i + 0.5));
+    });
+    const tex = track(new THREE.CanvasTexture(c));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  }
+
+  function buildInterior(p: Place): Built {
+    const group = new THREE.Group();
+    group.position.x = INTERIOR_OFFSET_X;
+    const clickables: THREE.Object3D[] = [];
+    const accent = new THREE.Color(p.color);
+
+    const ibox = (w: number, h: number, d: number, color: number, x: number, y: number, z: number, emissive = 0) => {
+      const m = new THREE.Mesh(
+        track(new THREE.BoxGeometry(w, h, d)),
+        track(new THREE.MeshStandardMaterial({ color, emissive, emissiveIntensity: emissive ? 0.9 : 0 }))
+      );
+      m.position.set(x, y, z);
+      group.add(m);
+      return m;
+    };
+    const plane = (w: number, h: number, map: THREE.Texture, x: number, y: number, z: number, ry: number, transparent = false) => {
+      const m = new THREE.Mesh(
+        track(new THREE.PlaneGeometry(w, h)),
+        track(new THREE.MeshBasicMaterial({ map, transparent }))
+      );
+      m.position.set(x, y, z);
+      m.rotation.y = ry;
+      group.add(m);
+      return m;
+    };
+
+    const { halfW, halfD, height } = ROOM;
+    ibox(halfW * 2, 0.3, halfD * 2, 0x9a6a45, 0, -0.15, 0); // wood floor
+    ibox(halfW * 2, 0.3, halfD * 2, 0x3a2a22, 0, height, 0); // ceiling
+    ibox(halfW * 2, height, 0.4, 0xf1e6cf, 0, height / 2, -halfD); // back wall
+    ibox(0.4, height, halfD * 2, 0xf1e6cf, -halfW, height / 2, 0);
+    ibox(0.4, height, halfD * 2, 0xf1e6cf, halfW, height / 2, 0);
+    // Front wall with a doorway 4 wide and 6.5 tall.
+    ibox(halfW - 2, height, 0.4, 0xf1e6cf, -(halfW + 2) / 2, height / 2, halfD);
+    ibox(halfW - 2, height, 0.4, 0xf1e6cf, (halfW + 2) / 2, height / 2, halfD);
+    ibox(4, height - 6.5, 0.4, 0xf1e6cf, 0, 6.5 + (height - 6.5) / 2, halfD);
+    // Painted band in the business's own color along the lower walls.
+    const band = accent.getHex();
+    ibox(halfW * 2 - 0.4, 2.6, 0.12, band, 0, 1.3, -halfD + 0.26);
+    ibox(0.12, 2.6, halfD * 2 - 0.4, band, -halfW + 0.26, 1.3, 0);
+    ibox(0.12, 2.6, halfD * 2 - 0.4, band, halfW - 0.26, 1.3, 0);
+
+    // EXIT sign over the door and the Pueblo Connect logo on the doormat.
+    plane(3, 1, boardTexture(["EXIT"], "#0b3d1e", "#ffffff", "#41d47a"), 0, 7.4, halfD - 0.25, Math.PI);
+    const mat = plane(4, 4, logoTex, 0, 0.04, halfD - 3, 0, true);
+    mat.rotation.x = -Math.PI / 2;
+
+    // Counter, with a gold edge, and the digital host behind it.
+    ibox(14.4, 1.6, 3.2, band, 0, 0.8, -12.2);
+    ibox(14.8, 0.18, 3.5, 0xe0b04a, 0, 1.69, -12.2, 0x5a3f08);
+    const host = figures.build({ ...avatarLookFor(`${p.name}-host`), shirt: band });
+    host.group.position.set(0, 0, -15.6);
+    group.add(host.group);
+    const hostHit = new THREE.Mesh(
+      track(new THREE.BoxGeometry(2.4, 3.8, 2.4)),
+      track(new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }))
+    );
+    hostHit.position.set(0, 1.9, -15.6);
+    hostHit.userData.hotspot = "host";
+    group.add(hostHit);
+    clickables.push(hostHit);
+
+    // Back wall: business name, Pueblo Connect logo between the two boards.
+    plane(12, 1.7, boardTexture([p.name], "#14202e", "#ffffff", "#f4c542"), 0, 8.5, -halfD + 0.26, 0);
+    plane(3.4, 3.4, logoTex, 0, 5.2, -halfD + 0.26, 0, true);
+    const dealLines = p.deal
+      ? ["TODAY'S DEAL", p.deal.title, p.deal.detail, "Step up to see it"]
+      : ["DEALS", "No live deal right now", "Check Pueblo Deals", ""].filter(Boolean);
+    const dealBoard = plane(6.4, 3.4, boardTexture(dealLines, "#4a1212", "#ffffff"), -5.2, 5.2, -halfD + 0.26, 0);
+    dealBoard.userData.hotspot = "deal";
+    clickables.push(dealBoard);
+    const menuBoard = plane(
+      6.4,
+      3.4,
+      boardTexture(["MENU & DETAILS", p.name, "Open our business page"], "#10351f", "#fff6c9"),
+      5.2,
+      5.2,
+      -halfD + 0.26,
+      0
+    );
+    menuBoard.userData.hotspot = "menu";
+    clickables.push(menuBoard);
+
+    // Right wall: the Pueblo screen (a sign, not a video player).
+    const info = opts.screen ?? { headline: "PUEBLO LIVE", status: "Watch at pueblo.connect/live" };
+    ibox(0.3, 6, 10.4, 0x111111, halfW - 0.4, 6, -1);
+    const tv = plane(9.6, 5.2, boardTexture(["PUEBLO LIVE", info.headline, info.status], "#101820", "#ffffff", "#41d4f4"), halfW - 0.6, 6, -1, -Math.PI / 2);
+    tv.userData.hotspot = "tv";
+    clickables.push(tv);
+    // Left wall: big Pueblo Connect logo with the lockup under it.
+    plane(5, 5, logoTex, -halfW + 0.3, 6.2, -2, Math.PI / 2, true);
+    plane(5, 2.4, lockupTex, -halfW + 0.3, 2.9, -2, Math.PI / 2, true);
+
+    // Tables and stools.
+    const topGeo = track(new THREE.CylinderGeometry(1.9, 1.9, 0.25, 20));
+    const legGeo = track(new THREE.CylinderGeometry(0.25, 0.35, 1.4, 8));
+    const stoolGeo = track(new THREE.CylinderGeometry(0.5, 0.5, 0.2, 12));
+    const stoolLegGeo = track(new THREE.CylinderGeometry(0.12, 0.12, 1, 6));
+    const woodMat = track(new THREE.MeshStandardMaterial({ color: 0x5a3a24 }));
+    const seatMat = track(new THREE.MeshStandardMaterial({ color: band }));
+    for (const [tx, tz] of TABLES) {
+      const top = new THREE.Mesh(topGeo, woodMat);
+      top.position.set(tx, 1.5, tz);
+      const leg = new THREE.Mesh(legGeo, woodMat);
+      leg.position.set(tx, 0.7, tz);
+      group.add(top, leg);
+      for (const a of [0.8, 2.4, 4.0, 5.6]) {
+        const sx = tx + Math.cos(a) * 2.6;
+        const sz = tz + Math.sin(a) * 2.6;
+        const seat = new THREE.Mesh(stoolGeo, seatMat);
+        seat.position.set(sx, 1.05, sz);
+        const sl = new THREE.Mesh(stoolLegGeo, woodMat);
+        sl.position.set(sx, 0.5, sz);
+        group.add(seat, sl);
+      }
+    }
+
+    // Floor rings show where something can be used.
+    const ringGeo = track(new THREE.RingGeometry(0.7, 0.95, 24));
+    for (const h of HOTSPOTS) {
+      const color = h.id === "door" ? 0x41d47a : 0x41d4f4;
+      const ring = new THREE.Mesh(ringGeo, track(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, side: THREE.DoubleSide })));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(h.x, 0.05, h.z);
+      group.add(ring);
+    }
+
+    // Warm pendant lights (three, to stay light on phones).
+    for (const [lx, lz] of [[-8, -4], [8, -4], [0, 8]] as const) {
+      const bulb = new THREE.Mesh(
+        track(new THREE.SphereGeometry(0.45, 10, 8)),
+        track(new THREE.MeshBasicMaterial({ color: 0xffe2a8 }))
+      );
+      bulb.position.set(lx, height - 1.2, lz);
+      const light = new THREE.PointLight(0xffd9a0, 90, 34, 1.6);
+      light.position.set(lx, height - 1.6, lz);
+      group.add(bulb, light);
+    }
+    return { group, clickables, place: p };
+  }
+
+  function snapCamera(dist: number, height: number) {
+    camera.position.set(
+      player.position.x - Math.sin(yaw) * dist,
+      height,
+      player.position.z - Math.cos(yaw) * dist
+    );
+  }
+
+  function enterInterior(p: Place) {
+    let built = interiors.get(p.id);
+    if (!built) {
+      built = buildInterior(p);
+      scene.add(built.group);
+      interiors.set(p.id, built);
+    }
+    interiors.forEach((i) => (i.group.visible = i === built));
+    activeInterior = built;
+    mode = "interior";
+    autoWalk = null;
+    hemi.intensity = 1.1;
+    sun.intensity = 0.25;
+    player.position.set(INTERIOR_OFFSET_X + SPAWN.x, 0, SPAWN.z);
+    yaw = Math.PI;
+    snapCamera(6.5, 4.6);
+    lastPromptId = null;
+    opts.onInteriorChange?.(p);
+  }
+
+  function leaveInterior() {
+    if (!activeInterior) return;
+    const p = activeInterior.place;
+    activeInterior = null;
+    mode = "city";
+    hemi.intensity = 2.2;
+    sun.intensity = 2.4;
+    doorCooldown = 1.5;
+    player.position.set(p.x, 0, p.z + p.depth / 2 + 5);
+    yaw = Math.PI; // turn to face the building you just left
+    snapCamera(10, 6);
+    lastPromptId = null;
+    opts.onPrompt?.(null);
+    opts.onInteriorChange?.(null);
+  }
+
+  function enterPlace(placeId: string): boolean {
+    const p = enterable.find((x) => x.id === placeId);
+    if (!p) return false;
+    if (mode === "interior") leaveInterior();
+    const frontZ = p.z + p.depth / 2;
+    player.position.set(p.x, 0, frontZ + 7);
+    yaw = Math.PI;
+    snapCamera(10, 6);
+    autoWalk = { x: p.x, z: frontZ + 0.2, done: () => enterInterior(p) };
+    return true;
+  }
+
+  function runHotspot(id: HotspotId) {
+    if (!activeInterior) return;
+    if (id === "door") leaveInterior();
+    else opts.onInteract?.(id, activeInterior.place, true);
+  }
+
+  function interact() {
+    if (mode !== "interior") return;
+    const h = nearestHotspot(player.position.x - INTERIOR_OFFSET_X, player.position.z);
+    if (h) runHotspot(h.id);
+  }
+
   // --- Input: keyboard, drag-to-look, mobile pad, click-to-select -----
   let yaw = Math.PI;
   let pitch = -0.18;
@@ -621,6 +906,7 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
 
   function onKeyDown(e: KeyboardEvent) {
     keys[e.key.toLowerCase()] = true;
+    if (e.key.toLowerCase() === "e" && !e.repeat) interact();
   }
   function onKeyUp(e: KeyboardEvent) {
     keys[e.key.toLowerCase()] = false;
@@ -650,6 +936,17 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1;
     mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
     raycaster.setFromCamera(mouse, camera);
+    if (mode === "interior" && activeInterior) {
+      const inside = raycaster.intersectObjects(activeInterior.clickables, false)[0];
+      const hid = inside?.object.userData.hotspot as HotspotId | undefined;
+      const spot = HOTSPOTS.find((h) => h.id === hid);
+      if (hid && spot) {
+        const d = Math.hypot(player.position.x - INTERIOR_OFFSET_X - spot.x, player.position.z - spot.z);
+        if (d <= spot.radius + 4) runHotspot(hid);
+        else opts.onInteract?.(hid, activeInterior.place, false);
+      }
+      return;
+    }
     const hit = raycaster.intersectObjects(clickable, false)[0];
     const dropId = hit?.object.userData.dropId as number | undefined;
     if (dropId !== undefined) {
@@ -674,6 +971,8 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
   }
 
   function teleportTo(placeId: string) {
+    if (mode === "interior") leaveInterior();
+    autoWalk = null;
     const d = destinations[placeId];
     if (!d) return;
     player.position.copy(d);
@@ -707,18 +1006,78 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
       (keys["a"] || keys["arrowleft"] || mobile.left ? 1 : 0);
     const f = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
     const r = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-    player.position.addScaledVector(f, forward * speed * dt).addScaledVector(r, strafe * speed * dt);
-    player.position.x = THREE.MathUtils.clamp(player.position.x, -WORLD_BOUND, WORLD_BOUND);
-    player.position.z = THREE.MathUtils.clamp(player.position.z, -WORLD_BOUND, WORLD_BOUND);
-    playerFigure.setWalk(clock.elapsedTime * 9, forward || strafe ? 1 : 0);
-    if (forward || strafe) {
-      player.rotation.y = Math.atan2(f.x * forward + r.x * strafe, f.z * forward + r.z * strafe);
+    const fwd = autoWalk ? 0 : forward;
+    const str = autoWalk ? 0 : strafe;
+    const fromX = player.position.x;
+    const fromZ = player.position.z;
+    let walking = fwd !== 0 || str !== 0;
+    if (autoWalk) {
+      // Walking up to a business's front door on its own.
+      const dx = autoWalk.x - fromX;
+      const dz = autoWalk.z - fromZ;
+      const d = Math.hypot(dx, dz);
+      const stepLen = 6 * dt;
+      walking = true;
+      if (d <= stepLen + 0.05) {
+        const done = autoWalk.done;
+        autoWalk = null;
+        done();
+      } else {
+        player.position.x += (dx / d) * stepLen;
+        player.position.z += (dz / d) * stepLen;
+        player.rotation.y = Math.atan2(dx, dz);
+      }
+    } else {
+      player.position.addScaledVector(f, fwd * speed * dt).addScaledVector(r, str * speed * dt);
     }
-    const dist = 10;
-    const height = 6;
+    if (mode === "interior") {
+      const res = resolveMove(
+        fromX - INTERIOR_OFFSET_X,
+        fromZ,
+        player.position.x - INTERIOR_OFFSET_X,
+        player.position.z
+      );
+      player.position.x = INTERIOR_OFFSET_X + res.x;
+      player.position.z = res.z;
+      const h = nearestHotspot(res.x, res.z);
+      const id = h ? h.id : null;
+      if (id !== lastPromptId) {
+        lastPromptId = id;
+        opts.onPrompt?.(h ? { id: h.id, label: h.label } : null);
+      }
+    } else {
+      player.position.x = THREE.MathUtils.clamp(player.position.x, -WORLD_BOUND, WORLD_BOUND);
+      player.position.z = THREE.MathUtils.clamp(player.position.z, -WORLD_BOUND, WORLD_BOUND);
+      doorCooldown -= dt;
+      if (!autoWalk && doorCooldown <= 0) {
+        for (const p of enterable) {
+          const frontZ = p.z + p.depth / 2;
+          if (
+            Math.abs(player.position.x - p.x) < 1.5 &&
+            player.position.z > frontZ - 0.6 &&
+            player.position.z < frontZ + 1.4
+          ) {
+            enterInterior(p);
+            break;
+          }
+        }
+      }
+    }
+    playerFigure.setWalk(clock.elapsedTime * 9, walking ? 1 : 0);
+    if (!autoWalk && (fwd || str)) {
+      player.rotation.y = Math.atan2(f.x * fwd + r.x * str, f.z * fwd + r.z * str);
+    }
+    const inside = mode === "interior";
+    const dist = inside ? 6.5 : 10;
+    const height = inside ? 4.6 : 6;
     const camTarget = player.position
       .clone()
       .add(new THREE.Vector3(-Math.sin(yaw) * dist, height, -Math.cos(yaw) * dist));
+    if (inside) {
+      camTarget.x = THREE.MathUtils.clamp(camTarget.x, INTERIOR_OFFSET_X - ROOM.halfW + 1, INTERIOR_OFFSET_X + ROOM.halfW - 1);
+      camTarget.z = THREE.MathUtils.clamp(camTarget.z, -ROOM.halfD + 1, ROOM.halfD - 1);
+      camTarget.y = Math.min(camTarget.y, ROOM.height - 1);
+    }
     camera.position.lerp(camTarget, 1 - Math.pow(0.001, dt));
     camera.lookAt(player.position.x, player.position.y + 2 + pitch * 4, player.position.z);
     const t = clock.elapsedTime;
@@ -754,5 +1113,5 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     }
   }
 
-  return { teleportTo, removeDrop, upsertRemotePlayer, removeRemotePlayer, setMobileMove, dispose };
+  return { teleportTo, enterPlace, exitPlace: leaveInterior, interact, removeDrop, upsertRemotePlayer, removeRemotePlayer, setMobileMove, dispose };
 }

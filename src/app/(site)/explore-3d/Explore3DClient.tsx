@@ -5,6 +5,7 @@ import Link from "next/link";
 import styles from "./explore-3d.module.css";
 import type { Place } from "@/lib/pueblo3d/places";
 import type { CityEngine, DropMarker } from "@/lib/pueblo3d/engine";
+import type { HotspotId } from "@/lib/pueblo3d/interior";
 
 type SessionUser = { id: number; username: string; email: string; role: "member" | "admin" };
 
@@ -50,6 +51,11 @@ export default function Explore3DClient({
   const [helpOpen, setHelpOpen] = useState(false);
   // Result of clicking a treasure drop: a message, plus the prize and code when claimed.
   const [dropResult, setDropResult] = useState<{ message: string; prize?: string; code?: string } | null>(null);
+
+  // Inside a business: which one, what the avatar is standing next to, and the open panel.
+  const [insidePlace, setInsidePlace] = useState<Place | null>(null);
+  const [prompt, setPrompt] = useState<{ id: HotspotId; label: string } | null>(null);
+  const [interiorPanel, setInteriorPanel] = useState<{ id: HotspotId; place: Place; near: boolean } | null>(null);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<CityEngine | null>(null);
@@ -120,6 +126,17 @@ export default function Explore3DClient({
         drops,
         screen,
         onDropClick: handleDropClick,
+        onInteriorChange: (place) => {
+          setInsidePlace(place);
+          setInteriorPanel(null);
+          setPrompt(null);
+          if (place) {
+            setSelectedPlace(null);
+            setMapOpen(false);
+          }
+        },
+        onPrompt: setPrompt,
+        onInteract: (id, place, near) => setInteriorPanel({ id, place, near }),
       });
       engineRef.current = engine;
     });
@@ -134,6 +151,12 @@ export default function Explore3DClient({
 
   function teleport(id: string) {
     engineRef.current?.teleportTo(id);
+    setSelectedPlace(null);
+    setMapOpen(false);
+  }
+
+  function enterBusiness(id: string) {
+    engineRef.current?.enterPlace(id);
     setSelectedPlace(null);
     setMapOpen(false);
   }
@@ -226,6 +249,11 @@ export default function Explore3DClient({
               >
                 Walk here
               </button>
+              {selectedPlace.category === "business" && (
+                <button type="button" className={styles.actionPrimary} onClick={() => enterBusiness(selectedPlace.id)}>
+                  Walk inside
+                </button>
+              )}
               {selectedPlace.href && (
                 <Link href={selectedPlace.href}>{selectedPlace.hrefLabel || "Open"}</Link>
               )}
@@ -262,12 +290,19 @@ export default function Explore3DClient({
               ×
             </button>
             <h2>Pueblo City Map</h2>
-            <p>Choose a destination.</p>
+            <p>Choose a destination. Businesses have a &ldquo;Walk inside&rdquo; button.</p>
             <div className={styles.destinations}>
               {places.map((p) => (
-                <button key={p.id} type="button" onClick={() => teleport(p.id)}>
-                  {p.name}
-                </button>
+                <div key={p.id} className={styles.destRow}>
+                  <button type="button" onClick={() => teleport(p.id)}>
+                    {p.name}
+                  </button>
+                  {p.category === "business" && (
+                    <button type="button" className={styles.enterBtn} onClick={() => enterBusiness(p.id)}>
+                      Walk inside
+                    </button>
+                  )}
+                </div>
               ))}
             </div>
           </aside>
@@ -292,6 +327,12 @@ export default function Explore3DClient({
               <strong>Mobile:</strong> Use the on-screen direction pad. Drag to look around and
               tap a building.
             </p>
+            <p>
+              <strong>Going inside:</strong> pick &ldquo;Walk inside&rdquo; on a business, or walk
+              through its front door. Inside, walk up to the glowing rings and press E (or tap
+              Use) to see the deal, the menu and the Pueblo screen. Walk to the door ring, or
+              press Leave, to go back out.
+            </p>
           </aside>
         )}
 
@@ -301,6 +342,82 @@ export default function Explore3DClient({
             <span className={styles.onlineDot} /> 1 online (multiplayer is a future enhancement)
           </div>
         </div>
+
+        {insidePlace && (
+          <div className={styles.insideBar}>
+            <span className={styles.hudPill}>
+              🚪 Inside {insidePlace.name}
+              {insidePlace.sample ? " (sample business)" : ""}
+            </span>
+            {prompt && (
+              <button type="button" className={styles.useBtn} onClick={() => engineRef.current?.interact()}>
+                {prompt.id === "door" ? "Leave" : "Use"}: {prompt.label} <kbd>E</kbd>
+              </button>
+            )}
+            <button type="button" className={styles.leaveBtn} onClick={() => engineRef.current?.exitPlace()}>
+              Leave
+            </button>
+          </div>
+        )}
+
+        {interiorPanel && (
+          <aside className={styles.panel}>
+            <button className={styles.closeBtn} type="button" aria-label="Close" onClick={() => setInteriorPanel(null)}>
+              ×
+            </button>
+            <span className={styles.panelType}>{interiorPanel.place.name.toUpperCase()}</span>
+            {!interiorPanel.near ? (
+              <>
+                <h2>A little closer</h2>
+                <p>Walk up to the glowing ring in front of it to use it.</p>
+              </>
+            ) : interiorPanel.id === "deal" ? (
+              <>
+                <h2>{interiorPanel.place.deal ? interiorPanel.place.deal.title : "No live deal right now"}</h2>
+                {interiorPanel.place.deal && <p>{interiorPanel.place.deal.detail}</p>}
+                {interiorPanel.place.sample && (
+                  <p className={styles.statusNote}>Sample business: it has no real deals.</p>
+                )}
+                <div className={styles.actions}>
+                  <Link href="/deals">See all Pueblo Deals</Link>
+                  {interiorPanel.place.href && (
+                    <Link href={interiorPanel.place.href}>{interiorPanel.place.hrefLabel || "Open business page"}</Link>
+                  )}
+                </div>
+              </>
+            ) : interiorPanel.id === "menu" ? (
+              <>
+                <h2>Menu &amp; details</h2>
+                <p>{interiorPanel.place.description}</p>
+                {interiorPanel.place.sample ? (
+                  <p className={styles.statusNote}>This is a sample business, so there is no real menu to open.</p>
+                ) : (
+                  interiorPanel.place.href && (
+                    <div className={styles.actions}>
+                      <Link href={interiorPanel.place.href}>{interiorPanel.place.hrefLabel || "Open business page"}</Link>
+                    </div>
+                  )
+                )}
+              </>
+            ) : interiorPanel.id === "tv" ? (
+              <>
+                <h2>{screen.headline}</h2>
+                <p>{screen.status}</p>
+                <div className={styles.actions}>
+                  <Link href="/live">Open Pueblo Live</Link>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2>Welcome to {interiorPanel.place.name}!</h2>
+                <p>{interiorPanel.place.description}</p>
+                <p className={styles.statusNote}>
+                  The host is a scenery figure for now. Ordering and reservations are not built yet.
+                </p>
+              </>
+            )}
+          </aside>
+        )}
 
         <div className={styles.mobilePad} aria-label="Movement controls">
           <button aria-label="Walk forward" {...mobilePadHandlers("forward")}>

@@ -56,5 +56,6 @@ export function storefrontToPlace(b: StorefrontInput, deal: BillboardDeal = null
     href: `/businesses/${b.slug}`,
     hrefLabel: "Open business page",
     billboard: billboardFor(b.billboard_text, deal),
+    deal: deal ? { title: deal.title.slice(0, 80), detail: deal.discount_text.slice(0, 60) } : null,
   };
 }
