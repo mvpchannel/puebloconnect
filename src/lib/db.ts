@@ -3496,6 +3496,34 @@ export function listBusinessReviews(businessId: number, limit = 100): BusinessRe
     .all(businessId, limit) as BusinessReviewWithUser[];
 }
 
+export type AdminLocationRow = {
+  id: number;
+  name: string;
+  slug: string;
+  category: string;
+  address: string | null;
+  phone: string | null;
+  hours_text: string | null;
+  storefront_lot: number | null;
+  owner_username: string;
+  created_at: string;
+};
+
+// Staff view of every business and where it is. `missingAddress` keeps only those with no address.
+export function listBusinessLocations(missingAddress = false): AdminLocationRow[] {
+  const db = getDb();
+  const where = missingAddress ? "WHERE b.address IS NULL OR TRIM(b.address) = ''" : "";
+  return db
+    .prepare(
+      `SELECT b.id, b.name, b.slug, b.category, b.address, b.phone, b.hours_text, b.storefront_lot,
+              u.username AS owner_username, b.created_at
+       FROM businesses b JOIN users u ON u.id = b.owner_id
+       ${where}
+       ORDER BY b.name COLLATE NOCASE`
+    )
+    .all() as AdminLocationRow[];
+}
+
 export type AdminReviewRow = BusinessReviewWithUser & { business_name: string; business_slug: string };
 
 // Staff view: every review across all businesses, newest first. `rating` filters to one star level.
