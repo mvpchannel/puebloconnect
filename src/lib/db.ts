@@ -3494,6 +3494,32 @@ export function listBusinessReviews(businessId: number, limit = 100): BusinessRe
     .all(businessId, limit) as BusinessReviewWithUser[];
 }
 
+export type AdminReviewRow = BusinessReviewWithUser & { business_name: string; business_slug: string };
+
+// Staff view: every review across all businesses, newest first. `rating` filters to one star level.
+export function listAllBusinessReviews(limit = 200, rating: number | null = null): AdminReviewRow[] {
+  const db = getDb();
+  const where = rating ? "WHERE br.rating = ?" : "";
+  const sql = `
+    SELECT
+      br.id, br.business_id, br.user_id, br.rating, br.body, br.created_at, br.updated_at,
+      u.username, u.first_name, u.last_name, u.profile_photo_path,
+      b.name AS business_name, b.slug AS business_slug
+    FROM business_reviews br
+    JOIN users u ON u.id = br.user_id
+    JOIN businesses b ON b.id = br.business_id
+    ${where}
+    ORDER BY br.created_at DESC LIMIT ?`;
+  const stmt = db.prepare(sql);
+  return (rating ? stmt.all(rating, limit) : stmt.all(limit)) as AdminReviewRow[];
+}
+
+// Staff removal of one review by its id (the member's points are not taken back).
+export function deleteBusinessReviewById(id: number): boolean {
+  const db = getDb();
+  return Number(db.prepare("DELETE FROM business_reviews WHERE id = ?").run(id).changes) > 0;
+}
+
 export function deleteBusinessReview(businessId: number, userId: number): void {
   const db = getDb();
   db.prepare(
