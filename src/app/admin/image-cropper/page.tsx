@@ -1,25 +1,23 @@
 import type { Metadata } from "next";
-import AdminInfoPage from "@/components/admin/AdminInfoPage";
+import CropTool from "./CropTool";
 
 export const metadata: Metadata = {
   title: "Crop Image",
 };
 
-// An honest placeholder: this admin tool is not built yet. It replaces the old
-// vendor-template demo screen (made-up names and numbers).
+// Real tool: crop a photo by hand (choose a shape, drag, zoom) and download the result.
+// It all happens in the browser; nothing is uploaded or saved on the site.
 export default function Page() {
   return (
-    <AdminInfoPage
-      title="Crop Image"
-      purpose="Crop a photo by hand before it is used."
-      status="Not built yet"
-      today={[
-        "Photos are resized automatically in the browser when they are uploaded. There is no manual crop tool yet.",
-        "Placeholder images are used wherever a business, event or group has no picture.",
-      ]}
-      links={[
-          { href: "/businesses", label: "Business channels" },
-      ]}
-    />
+    <div className="row">
+      <div className="col-md-12" style={{ maxWidth: 720 }}>
+        <h2 style={{ marginBottom: 12 }}>Crop Image</h2>
+        <p style={{ color: "#555", marginBottom: 18 }}>
+          Crop a photo to the shape you need, then download it as a JPEG. Nothing is uploaded or saved on the
+          site. The result is at most 1600 pixels on its long side.
+        </p>
+        <CropTool />
+      </div>
+    </div>
   );
 }
