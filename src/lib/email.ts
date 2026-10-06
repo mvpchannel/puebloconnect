@@ -69,6 +69,7 @@ export type EmailKind =
   | "password_reset"
   | "password_changed"
   | "account_deleted"
+  | "registration_attempt"
   | "stream_live"
   | "friend_request"
   | "friend_accepted"
@@ -253,6 +254,27 @@ export function buildAccountDeletedEmail(to: string): EmailMessage {
       "Your Pueblo Connect account has been deleted.\n\n" +
       "Your profile, posts, comments, messages and other personal information were removed.\n" +
       "If you did not do this, contact Pueblo Connect right away.",
+  };
+}
+
+// Sent when someone tries to sign up with an address that already has an account.
+// The sign-up form shows the same message either way, so the form never reveals
+// which addresses are registered; this email is how the real owner finds out.
+export function buildRegistrationAttemptEmail(to: string): EmailMessage {
+  const loginUrl = `${APP_URL}/login`;
+  return {
+    to,
+    subject: "Someone tried to create a Pueblo Connect account with your email",
+    html: wrapHtml(`
+    <p style="font-size:18px;font-weight:bold;margin-top:0;">YOU ALREADY HAVE AN ACCOUNT</p>
+    <p>Someone just tried to sign up for Pueblo Connect using this email address, which already has an account.</p>
+    <p>If that was you, <a href="${loginUrl}">sign in here</a>, or use &ldquo;Forgot password&rdquo; if you need to reset it.</p>
+    <p>If it wasn&rsquo;t you, you can ignore this email. Nothing about your account changed.</p>
+  `),
+    text:
+      "Someone just tried to sign up for Pueblo Connect using this email address, which already has an account.\n\n" +
+      `If that was you, sign in: ${loginUrl} (or use Forgot password).\n` +
+      "If it wasn't you, you can ignore this email. Nothing about your account changed.",
   };
 }
 

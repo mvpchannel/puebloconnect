@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createUser, getUserByUsername, getUserByEmail } from "@/lib/db";
 import { hashPassword } from "@/lib/password";
-import { signSession, SESSION_COOKIE_NAME, SESSION_TTL_SECONDS } from "@/lib/session";
 import {
   generateRawToken,
   hashToken,
@@ -9,7 +8,7 @@ import {
   EMAIL_VERIFICATION_TTL_SECONDS,
 } from "@/lib/tokens";
 import { createEmailVerificationToken } from "@/lib/db";
-import { sendTransactionalEmail, buildVerificationEmail } from "@/lib/email";
+import { sendTransactionalEmail, buildVerificationEmail, buildRegistrationAttemptEmail } from "@/lib/email";
 import { checkAndRecordRateLimit, RATE_LIMITS, clientIp } from "@/lib/rate-limit";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -119,15 +118,18 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Checked up front for a clearer error message, but the UNIQUE
-  // constraints in the users table (see db.ts) are the real enforcement —
-  // this check alone would still have a race-condition window under
-  // concurrent signups with the same email/username.
+  // Same answer whether or not the email already has an account, so this form
+  // can't be used to find out who is registered. If it does, the real owner gets
+  // an email saying so (and no new account is made). Usernames are public
+  // (profile names), so a taken username is still reported plainly.
+  const GENERIC_OK = { ok: true, checkEmail: true };
   if (getUserByUsername(cleanUsername)) {
     return NextResponse.json({ error: "That username is already taken." }, { status: 409 });
   }
   if (getUserByEmail(cleanEmail)) {
-    return NextResponse.json({ error: "That email address is already registered." }, { status: 409 });
+    hashPassword(password); // keep the response time similar to a real sign-up
+    await sendTransactionalEmail("registration_attempt", buildRegistrationAttemptEmail(cleanEmail));
+    return NextResponse.json(GENERIC_OK);
   }
 
   // Optional profile photo: accepted as a small base64 data URL (simpler
@@ -183,10 +185,10 @@ export async function POST(req: NextRequest) {
   } catch {
     // Most likely cause: a concurrent request won the UNIQUE-constraint
     // race on username or email between the check above and this insert.
-    return NextResponse.json(
-      { error: "That username or email is already registered." },
-      { status: 409 }
-    );
+    if (getUserByUsername(cleanUsername)) {
+      return NextResponse.json({ error: "That username is already taken." }, { status: 409 });
+    }
+    return NextResponse.json(GENERIC_OK);
   }
 
   // Send the verification email. A failure to send must not be reported
@@ -199,23 +201,9 @@ export async function POST(req: NextRequest) {
     hashToken(rawToken),
     expiresAtIso(EMAIL_VERIFICATION_TTL_SECONDS)
   );
-  const emailResult = await sendTransactionalEmail(
-    "welcome_verify",
-    buildVerificationEmail(user.email, rawToken)
-  );
+  await sendTransactionalEmail("welcome_verify", buildVerificationEmail(user.email, rawToken));
 
-  const token = signSession({ sub: user.id, username: user.username, role: user.role, pwv: user.session_version });
-
-  const res = NextResponse.json({
-    user,
-    emailVerificationSent: emailResult.delivered,
-  });
-  res.cookies.set(SESSION_COOKIE_NAME, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: SESSION_TTL_SECONDS,
-  });
-  return res;
+  // No session is started here: the form answers identically for new and
+  // existing emails, so the person signs in after confirming their address.
+  return NextResponse.json(GENERIC_OK);
 }

@@ -5805,8 +5805,13 @@ export function createContactMessage(fields: {
     .get(Number(info.lastInsertRowid)) as ContactMessage;
 }
 
-// For a future admin "contact messages" inbox page — not built yet, but
-// the data is real and queryable the moment it is.
+// Used by the admin Contact messages page.
+export function setContactMessageStatus(id: number, status: ContactMessage["status"]): boolean {
+  const db = getDb();
+  const info = db.prepare("UPDATE contact_messages SET status = ? WHERE id = ?").run(status, id);
+  return Number(info.changes) > 0;
+}
+
 export function listContactMessages(limit = 100): ContactMessage[] {
   const db = getDb();
   return db
@@ -6600,8 +6605,8 @@ export type DeleteAccountResult =
 
 export function deleteUserAccount(userId: number): DeleteAccountResult {
   const db = getDb();
-  const user = db.prepare("SELECT id, role, account_status FROM users WHERE id = ?").get(userId) as
-    | { id: number; role: string; account_status: string }
+  const user = db.prepare("SELECT id, role, account_status, email FROM users WHERE id = ?").get(userId) as
+    | { id: number; role: string; account_status: string; email: string }
     | undefined;
   if (!user || user.account_status === "deleted") return { ok: false, reason: "not_found" };
   if (user.role === "admin") return { ok: false, reason: "admin" };
@@ -6686,6 +6691,8 @@ export function deleteUserAccount(userId: number): DeleteAccountResult {
     ] as const) {
       del(`DELETE FROM ${table} WHERE ${col} = ?`);
     }
+    // Notification emails still waiting in the queue (or already sent/failed) for this address.
+    db.prepare("DELETE FROM queued_emails WHERE lower(to_address) = lower(?)").run(user.email);
     // Contact-form messages keep the text staff needed to answer but lose the link to the account.
     db.prepare("UPDATE contact_messages SET user_id = NULL WHERE user_id = ?").run(userId);
     // Streams they were hosting stop being live/scheduled.

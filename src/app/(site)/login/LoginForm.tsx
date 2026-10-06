@@ -39,6 +39,7 @@ function LoginForm() {
   const [loginPassword, setLoginPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [loginNotice, setLoginNotice] = useState<string | null>(null);
   const [loginBusy, setLoginBusy] = useState(false);
 
   const [regFirstName, setRegFirstName] = useState("");
@@ -125,8 +126,9 @@ function LoginForm() {
         setRegError(data.error || "Registration failed.");
         return;
       }
-      router.push("/newsfeed");
-      router.refresh();
+      setShowRegister(false);
+      setLoginUsername(regUsername);
+      setLoginNotice("Check your email to confirm your address. Then sign in here.");
     } catch {
       setRegError("Couldn't reach the server. Try again.");
     } finally {
@@ -171,6 +173,11 @@ function LoginForm() {
                 </a>
               </p>
               <form method="post" onSubmit={handleLogin}>
+                {loginNotice && (
+                  <p role="status" style={{ color: "#1f6feb", marginBottom: 12 }}>
+                    {loginNotice}
+                  </p>
+                )}
                 {loginError && (
                   <p role="alert" style={{ color: "#e02020", marginBottom: 12 }}>
                     {loginError}
