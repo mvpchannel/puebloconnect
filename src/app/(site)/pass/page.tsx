@@ -11,8 +11,8 @@ export const metadata: Metadata = { title: "Pueblo Pass" };
 export const dynamic = "force-dynamic";
 
 // Member-only (middleware.ts). The Pass is the member's digital card. Today
-// it shows real account facts (name, member since, points level, business
-// plan). Redeeming it at participating businesses is NOT built, and the page
+// it shows the Pueblo Pass artwork with real account facts (name, member
+// since, points level, business plan). Redeeming it at participating businesses is NOT built, and the page
 // says so rather than implying discounts exist.
 export default async function PassPage() {
   const session = await getCurrentUser();
@@ -53,36 +53,60 @@ export default async function PassPage() {
               <div className="col-lg-9">
                 <h3 style={{ marginBottom: 14 }}>Pueblo Pass</h3>
 
+                {/* Official Pueblo Pass artwork on top; the member's real details below. */}
                 <div
                   style={{
-                    maxWidth: 420,
-                    borderRadius: 14,
-                    padding: 22,
-                    color: "#fff",
-                    background: "linear-gradient(135deg,#088dcd,#0b5e8c)",
-                    boxShadow: "0 6px 18px rgba(0,0,0,.18)",
+                    maxWidth: 560,
+                    borderRadius: 22,
+                    overflow: "hidden",
+                    background: "#fff",
+                    boxShadow: "0 8px 24px rgba(10,40,100,.28)",
+                    border: "2px solid #0b3d91",
                     marginBottom: 18,
                   }}
                 >
-                  <div style={{ fontSize: 12, letterSpacing: 1.5, opacity: 0.85 }}>PUEBLO CONNECT</div>
-                  <div style={{ fontSize: 20, fontWeight: 700, marginBottom: 14 }}>Pueblo Pass</div>
-                  <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src="/images/pueblo-pass-art.png"
+                    alt="Pueblo Pass. Local people, real deals, stronger communities."
+                    style={{ display: "block", width: "100%", height: "auto" }}
+                  />
+                  <div style={{ display: "flex", gap: 14, alignItems: "center", padding: "14px 18px", flexWrap: "wrap" }}>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={viewerAvatarSrc(user.id)} alt="" width={64} height={64} style={{ borderRadius: "50%", objectFit: "cover", border: "2px solid #fff" }} />
-                    <div>
-                      <div style={{ fontSize: 18, fontWeight: 600 }}>{name}</div>
-                      <div style={{ fontSize: 13, opacity: 0.9 }}>Member since {since}</div>
+                    <img
+                      src={viewerAvatarSrc(user.id)}
+                      alt=""
+                      width={72}
+                      height={72}
+                      style={{ borderRadius: "50%", objectFit: "cover", border: "3px solid #0b3d91", flex: "none" }}
+                    />
+                    <div style={{ flex: "1 1 180px", minWidth: 0 }}>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: "#0b2a6b", lineHeight: 1.15, overflowWrap: "anywhere" }}>{name}</div>
+                      <div style={{ fontSize: 14, color: "#222", margin: "2px 0 6px" }}>Member since {since}</div>
+                      <span
+                        style={{
+                          display: "inline-block",
+                          background: "#f5c518",
+                          color: "#111",
+                          fontWeight: 800,
+                          letterSpacing: 1,
+                          borderRadius: 8,
+                          padding: "3px 16px",
+                          fontSize: 16,
+                        }}
+                      >
+                        {passNumber}
+                      </span>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#0b2a6b", marginTop: 6 }}>
+                        {level.label} <span style={{ color: "#f5a000" }}>·</span> {points.toLocaleString("en-US")} pts
+                      </div>
+                      {membership?.status === "active" && (
+                        <div style={{ marginTop: 2, fontSize: 12, color: "#555", textTransform: "capitalize" }}>
+                          Business plan: {membership.plan}
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 18, fontSize: 13 }}>
-                    <span>{passNumber}</span>
-                    <span>{level.label} · {points.toLocaleString("en-US")} pts</span>
-                  </div>
-                  {membership?.status === "active" && (
-                    <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, textTransform: "capitalize" }}>
-                      Business plan: {membership.plan}
-                    </div>
-                  )}
                 </div>
 
                 <div className="central-meta item" style={{ padding: 20 }}>
