@@ -713,8 +713,14 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     };
 
     const { halfW, halfD, height } = ROOM;
-    ibox(halfW * 2, 0.3, halfD * 2, 0x9a6a45, 0, -0.15, 0); // wood floor
-    ibox(halfW * 2, 0.3, halfD * 2, 0x3a2a22, 0, height, 0); // ceiling
+    ibox(halfW * 2, 0.3, halfD * 2, 0xc89868, 0, -0.15, 0); // light wood floor
+    ibox(halfW * 2, 0.3, halfD * 2, 0xf7f2e8, 0, height, 0); // white ceiling
+    // Skylight strips and daylight windows either side of the door.
+    for (const sx of [-8, 0, 8]) ibox(3, 0.08, 20, 0xffffff, sx, height - 0.2, 0, 0xffffff);
+    for (const wx of [-8, 8]) {
+      ibox(6.4, 4.4, 0.1, 0xffffff, wx, 4.6, halfD - 0.22);
+      ibox(6, 4, 0.12, 0xcfeaff, wx, 4.6, halfD - 0.26, 0xcfeaff);
+    }
     ibox(halfW * 2, height, 0.4, 0xf1e6cf, 0, height / 2, -halfD); // back wall
     ibox(0.4, height, halfD * 2, 0xf1e6cf, -halfW, height / 2, 0);
     ibox(0.4, height, halfD * 2, 0xf1e6cf, halfW, height / 2, 0);
@@ -817,10 +823,10 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     for (const [lx, lz] of [[-8, -4], [8, -4], [0, 8]] as const) {
       const bulb = new THREE.Mesh(
         track(new THREE.SphereGeometry(0.45, 10, 8)),
-        track(new THREE.MeshBasicMaterial({ color: 0xffe2a8 }))
+        track(new THREE.MeshBasicMaterial({ color: 0xfff6e0 }))
       );
       bulb.position.set(lx, height - 1.2, lz);
-      const light = new THREE.PointLight(0xffd9a0, 90, 34, 1.6);
+      const light = new THREE.PointLight(0xfff1d6, 140, 40, 1.4);
       light.position.set(lx, height - 1.6, lz);
       group.add(bulb, light);
     }
@@ -846,8 +852,8 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     activeInterior = built;
     mode = "interior";
     autoWalk = null;
-    hemi.intensity = 1.1;
-    sun.intensity = 0.25;
+    hemi.intensity = 3.6; // bright daylight inside
+    sun.intensity = 1.2;
     player.position.set(INTERIOR_OFFSET_X + SPAWN.x, 0, SPAWN.z);
     yaw = Math.PI;
     snapCamera(6.5, 4.6);
