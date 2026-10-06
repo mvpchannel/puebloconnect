@@ -3818,6 +3818,14 @@ export function listEventsStartingAfter(isoUtc: string, limit = 100): EventWithM
     .all(isoUtc, limit) as EventWithMeta[];
 }
 
+// Events whose start falls in [fromIso, toIso) (UTC ISO strings), soonest first. Used by the admin calendar.
+export function listEventsBetween(fromIso: string, toIso: string): EventWithMeta[] {
+  const db = getDb();
+  return db
+    .prepare(`${EVENT_SELECT} WHERE e.starts_at >= ? AND e.starts_at < ? ORDER BY e.starts_at ASC`)
+    .all(fromIso, toIso) as EventWithMeta[];
+}
+
 export function listEventsForBusiness(businessId: number): EventWithMeta[] {
   const db = getDb();
   return db
