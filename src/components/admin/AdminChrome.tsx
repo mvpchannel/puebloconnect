@@ -8,26 +8,25 @@ type SessionUser = { id: number; username: string; email: string; role: "member"
 
 const NAV_LINKS: { href: string; label: string; icon: string }[] = [
   { href: "/admin", label: "Dashboard", icon: "fa-dashboard" },
-  { href: "/admin/connect", label: "connect", icon: "fa-bolt" },
-  { href: "/admin/edit-profile", label: "edit profile", icon: "fa-flask" },
-  { href: "/admin/inbox", label: "inbox", icon: "fa-flask" },
+  { href: "/admin/connect", label: "Connect accounts", icon: "fa-bolt" },
+  { href: "/admin/edit-profile", label: "Edit profile", icon: "fa-pencil" },
+  { href: "/admin/inbox", label: "Inbox", icon: "fa-inbox" },
 ];
 
 const EXTRAS_LINKS: { href: string; label: string }[] = [
-  { href: "/admin/calendar", label: "calendar" },
+  { href: "/admin/calendar", label: "Calendar" },
   { href: "/admin/image-cropper", label: "Crop image" },
   { href: "/admin/link-posting", label: "Share a link" },
   { href: "/admin/notifications", label: "Notifications" },
   { href: "/admin/image-opener", label: "Post a photo" },
-  { href: "/admin/tickets-1", label: "ticket style 1" },
-  { href: "/admin/tickets-2", label: "ticket style 2" },
-  { href: "/admin/reviews", label: "reviews" },
+  { href: "/admin/contact-messages", label: "Contact messages" },
+  { href: "/admin/reviews", label: "Reviews" },
 ];
 
 const MORE_LINKS: { href: string; label: string; icon: string }[] = [
   { href: "/admin/locations", label: "Locations", icon: "fa-inbox" },
   { href: "/admin/posting-panel", label: "Create a post", icon: "fa-hdd-o" },
-  { href: "/admin/post-preview", label: "post preview page", icon: "fa-glass" },
+  { href: "/admin/post-preview", label: "Preview a post", icon: "fa-glass" },
   { href: "/admin/users", label: "user management", icon: "fa-hdd-o" },
   { href: "/admin/stream-moderation", label: "stream moderation", icon: "fa-flag" },
   { href: "/admin/best-of", label: "best of the pueblo", icon: "fa-trophy" },
