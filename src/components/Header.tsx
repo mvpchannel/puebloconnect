@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatRelativeTime } from "@/lib/time";
+import { NAV_ACCOUNT, NAV_PRIMARY } from "@/lib/nav-config";
 import { NOTIFICATION_TEXT, NOTIFICATION_LINK, type NotificationItem } from "@/lib/notification-text";
 
 type SessionUser = { id: number; username: string; email: string; role: "member" | "admin" };
@@ -220,26 +221,29 @@ export default function Header() {
         </div>
         <nav id="menu" className={`res-menu${mobileMenuOpen ? " active" : ""}`}>
           <ul>
+            {NAV_PRIMARY.map((g) =>
+              g.items ? (
+                <li key={g.label}>
+                  <span>{g.label}</span>
+                  <ul>
+                    {g.items.map((i) => (
+                      <li key={i.href}><Link href={i.href} title="">{i.label}</Link></li>
+                    ))}
+                  </ul>
+                </li>
+              ) : (
+                <li key={g.label}>
+                  <Link href={g.href!} title="">{g.label}</Link>
+                </li>
+              )
+            )}
             <li>
-              <span>Home</span>
+              <span>My account</span>
               <ul>
-                <li><Link href="/newsfeed" title="">Newsfeed</Link></li>
-                <li><Link href="/login" title="">Login page</Link></li>
-              </ul>
-            </li>
-            <li>
-              <span>Explore the Pueblo in 3D</span>
-              <ul>
-                <li><Link href="/explore-3d" title="">Explore in 3D</Link></li>
-              </ul>
-            </li>
-            <li>
-              <span>Timeline</span>
-              <ul>
-                <li><Link href="/profile" title="">Timeline</Link></li>
-                <li><Link href="/about" title="">About Pueblo Connect</Link></li>
-                <li><Link href="/terms" title="">Terms &amp; conditions</Link></li>
-                <li><Link href="/sitemap-page" title="">Sitemap</Link></li>
+                {NAV_ACCOUNT.map((i) => (
+                  <li key={i.href}><Link href={i.href} title="">{i.label}</Link></li>
+                ))}
+                <li>{user ? <a href="#" title="" onClick={handleLogout}>Log out</a> : <Link href="/login" title="">Log in</Link>}</li>
               </ul>
             </li>
           </ul>
@@ -256,51 +260,22 @@ export default function Header() {
 
         <div className="top-area">
           <ul className="main-menu">
-            <li>
-              <a href="#" title="">Home</a>
-              <ul>
-                <li><Link href="/newsfeed" title="">Newsfeed</Link></li>
-                <li><Link href="/login" title="">Login page</Link></li>
-              </ul>
-            </li>
-            <li>
-              <a href="#" title="">Timeline</a>
-              <ul>
-                <li><Link href="/profile" title="">Timeline</Link></li>
-              </ul>
-            </li>
-            <li>
-              <a href="#" title="">Account settings</a>
-              <ul>
-                <li><Link href="/account-settings" title="">Account Settings</Link></li>
-                <li><Link href="/messages" title="">Messages</Link></li>
-              </ul>
-            </li>
-            <li>
-              <a href="#" title="">More pages</a>
-              <ul>
-                <li><Link href="/live" title="">Pueblo Live</Link></li>
-                <li><Link href="/businesses" title="">Business Channels</Link></li>
-                <li><Link href="/events" title="">Events</Link></li>
-                <li><Link href="/deals" title="">Pueblo Deals</Link></li>
-                <li><Link href="/best-of" title="">Best of the Pueblo</Link></li>
-                <li><Link href="/reports" title="">Report &amp; Track</Link></li>
-                <li><Link href="/street-team" title="">Pueblo Street Team</Link></li>
-                <li><Link href="/booth" title="">The Pueblo Booth</Link></li>
-                <li><Link href="/passport" title="">Pueblo Passport</Link></li>
-                <li><Link href="/tonight" title="">What&apos;s Happening Tonight</Link></li>
-                <li><Link href="/classifieds" title="">Pueblo Classifieds</Link></li>
-                <li><Link href="/spotlight" title="">Business Spotlight</Link></li>
-                <li><Link href="/rewards" title="">Pueblo Rewards</Link></li>
-                <li><Link href="/groups" title="">Groups</Link></li>
-                <li><Link href="/explore-3d" title="">Explore the Pueblo in 3D</Link></li>
-                <li><Link href="/membership" title="">Business Membership</Link></li>
-                <li><Link href="/advertise" title="">Advertise</Link></li>
-                <li><Link href="/about" title="">About Pueblo Connect</Link></li>
-                <li><Link href="/terms" title="">Terms &amp; conditions</Link></li>
-                <li><Link href="/sitemap-page" title="">Sitemap</Link></li>
-              </ul>
-            </li>
+            {NAV_PRIMARY.map((g) =>
+              g.items ? (
+                <li key={g.label}>
+                  <a href="#" title="">{g.label}</a>
+                  <ul>
+                    {g.items.map((i) => (
+                      <li key={i.href}><Link href={i.href} title="">{i.label}</Link></li>
+                    ))}
+                  </ul>
+                </li>
+              ) : (
+                <li key={g.label}>
+                  <Link href={g.href!} title="">{g.label}</Link>
+                </li>
+              )
+            )}
           </ul>
           <ul className="setting-area" ref={settingAreaRef}>
             {user && (

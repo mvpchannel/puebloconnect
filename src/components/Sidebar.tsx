@@ -1,111 +1,46 @@
 import Link from "next/link";
+import { NAV_PRIMARY } from "@/lib/nav-config";
 
 /**
- * Shared "Shortcuts" sidebar widget, ported from the markup duplicated
- * across most winku-html pages (newsfeed, faq, timeline, etc.).
+ * Shared "Shortcuts" sidebar widget. Built from the same navigation list as the
+ * top menu (src/lib/nav-config.ts), grouped under short headings so the list
+ * is easy to scan instead of one long column.
  */
 export default function Sidebar() {
+  const direct = NAV_PRIMARY.filter((g) => g.href && !g.items);
+  const groups = NAV_PRIMARY.filter((g) => g.items && g.label !== "More");
+  const heading: React.CSSProperties = {
+    padding: "14px 0 4px",
+    fontSize: 11,
+    fontWeight: 700,
+    letterSpacing: ".07em",
+    textTransform: "uppercase",
+    color: "#8a94a0",
+  };
   return (
     <aside className="sidebar static">
       <div className="widget stick-widget">
         <h4 className="widget-title">Shortcuts</h4>
         <ul className="naves">
-          <li>
-            <i className="ti-medall" />
-            <Link href="/spotlight" title="">Business Spotlight</Link>
-          </li>
-          <li>
-            <i className="ti-clipboard" />
-            <Link href="/newsfeed" title="">Newsfeed</Link>
-          </li>
-          <li>
-            <i className="ti-mouse-alt" />
-            <Link href="/messages" title="">Inbox</Link>
-          </li>
-          <li>
-            <i className="ti-files" />
-            <Link href="/groups" title="">Groups</Link>
-          </li>
-          <li>
-            <i className="ti-user" />
-            <Link href="/friends" title="">Friends</Link>
-          </li>
-          <li>
-            <i className="ti-location-pin" />
-            <Link href="/nearby" title="">Members Near You</Link>
-          </li>
-          <li>
-            <i className="ti-image" />
-            <Link href="/profile" title="">Photos</Link>
-          </li>
-          <li>
-            <i className="ti-video-camera" />
-            <Link href="/live" title="">Pueblo Live</Link>
-          </li>
-          <li>
-            <i className="ti-briefcase" />
-            <Link href="/businesses" title="">Business Channels</Link>
-          </li>
-          <li>
-            <i className="ti-calendar" />
-            <Link href="/events" title="">Events</Link>
-          </li>
-          <li>
-            <i className="ti-tag" />
-            <Link href="/deals" title="">Pueblo Deals</Link>
-          </li>
-          <li>
-            <i className="ti-crown" />
-            <Link href="/best-of" title="">Best of the Pueblo</Link>
-          </li>
-          <li>
-            <i className="ti-flag-alt-2" />
-            <Link href="/reports" title="">Report &amp; Track</Link>
-          </li>
-          <li>
-            <i className="ti-camera" />
-            <Link href="/street-team" title="">Pueblo Street Team</Link>
-          </li>
-          <li>
-            <i className="ti-microphone-alt" />
-            <Link href="/booth" title="">The Pueblo Booth</Link>
-          </li>
-          <li>
-            <i className="ti-credit-card" />
-            <Link href="/pass" title="">Pueblo Pass</Link>
-          </li>
-          <li>
-            <i className="ti-gift" />
-            <Link href="/treasures" title="">My Treasures</Link>
-          </li>
-          <li>
-            <i className="ti-id-badge" />
-            <Link href="/passport" title="">Pueblo Passport</Link>
-          </li>
-          <li>
-            <i className="ti-star" />
-            <Link href="/rewards" title="">Pueblo Rewards</Link>
-          </li>
-          <li>
-            <i className="ti-clipboard" />
-            <Link href="/classifieds" title="">Classifieds</Link>
-          </li>
-          <li>
-            <i className="ti-timer" />
-            <Link href="/tonight" title="">Happening Tonight</Link>
-          </li>
-          <li>
-            <i className="ti-pulse" />
-            <Link href="/happening" title="">What&rsquo;s Happening</Link>
-          </li>
-          <li>
-            <i className="ti-video-clapper" />
-            <Link href="/media" title="">Media Hub</Link>
-          </li>
-          <li>
-            <i className="ti-comments" />
-            <Link href="/we-asked" title="">We Asked the Pueblo</Link>
-          </li>
+          {direct.map((g) => (
+            <li key={g.href}>
+              <i className={g.icon} />
+              <Link href={g.href!} title="">{g.label}</Link>
+            </li>
+          ))}
+          {groups.map((g) => (
+            <li key={g.label} style={{ padding: 0 }}>
+              <div style={heading}>{g.label}</div>
+              <ul className="naves" style={{ margin: 0, padding: 0 }}>
+                {g.items!.map((i) => (
+                  <li key={i.href}>
+                    <i className={i.icon} />
+                    <Link href={i.href} title="">{i.label}</Link>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
         </ul>
       </div>
     </aside>
