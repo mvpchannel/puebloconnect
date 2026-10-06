@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Linkified from "@/components/Linkified";
 import Link from "next/link";
 
 type PostCardProps = {
@@ -232,7 +233,7 @@ export default function PostCard({
           )}
           <div className="post-meta">
             <div className="description">
-              {text && <p>{text}</p>}
+              {text && <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><Linkified text={text} /></p>}
               {videoSrc && (
                 <video
                   src={videoSrc}
