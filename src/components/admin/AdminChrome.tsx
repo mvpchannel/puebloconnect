@@ -15,18 +15,18 @@ const NAV_LINKS: { href: string; label: string; icon: string }[] = [
 
 const EXTRAS_LINKS: { href: string; label: string }[] = [
   { href: "/admin/calendar", label: "calendar" },
-  { href: "/admin/image-cropper", label: "image croper" },
-  { href: "/admin/link-posting", label: "Link posting" },
-  { href: "/admin/notifications", label: "notifications" },
-  { href: "/admin/image-opener", label: "image opener" },
+  { href: "/admin/image-cropper", label: "Crop image" },
+  { href: "/admin/link-posting", label: "Share a link" },
+  { href: "/admin/notifications", label: "Notifications" },
+  { href: "/admin/image-opener", label: "Post a photo" },
   { href: "/admin/tickets-1", label: "ticket style 1" },
   { href: "/admin/tickets-2", label: "ticket style 2" },
   { href: "/admin/reviews", label: "reviews" },
 ];
 
 const MORE_LINKS: { href: string; label: string; icon: string }[] = [
-  { href: "/admin/locations", label: "location system", icon: "fa-inbox" },
-  { href: "/admin/posting-panel", label: "editable panel", icon: "fa-hdd-o" },
+  { href: "/admin/locations", label: "Locations", icon: "fa-inbox" },
+  { href: "/admin/posting-panel", label: "Create a post", icon: "fa-hdd-o" },
   { href: "/admin/post-preview", label: "post preview page", icon: "fa-glass" },
   { href: "/admin/users", label: "user management", icon: "fa-hdd-o" },
   { href: "/admin/stream-moderation", label: "stream moderation", icon: "fa-flag" },
