@@ -1,3 +1,4 @@
+import { parseLinkPreview } from "@/lib/link-meta";
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
 import { limitMember } from "@/lib/rate-limit";
@@ -41,6 +42,7 @@ export async function GET(req: NextRequest) {
       body: p.body,
       imagePath: p.image_path,
       videoPath: p.video_path,
+      link: parseLinkPreview(p.link_json),
       targetType: p.target_type,
       targetId: p.target_id,
       createdAt: p.created_at,
@@ -145,6 +147,7 @@ export async function POST(req: NextRequest) {
         body: post.body,
         imagePath: post.image_path,
         videoPath: post.video_path,
+        link: parseLinkPreview(post.link_json),
         targetType: post.target_type,
         targetId: post.target_id,
         createdAt: post.created_at,

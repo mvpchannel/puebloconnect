@@ -8,7 +8,7 @@ Every admin page below is a real tool that reads or writes real data. Last updat
 | Dashboard | Overview (`/admin`) |
 | Inbox | The signed-in admin's real conversations |
 | Create a post | Post text, a photo or a video to the newsfeed; list latest posts; delete any post |
-| Share a link | Post a web address, with an optional note, to the newsfeed |
+| Share a link | Builds a preview card (picture, title, description) from the page, editable before posting; manual fallback and own-picture upload for sites that block the page reader |
 | Post a photo | Crop and post a photo to the newsfeed or as a 24-hour story |
 | Crop image | Crop a photo in the browser and download it (nothing saved on the site) |
 | Preview a post | Write a post, see a simplified preview, then publish it |

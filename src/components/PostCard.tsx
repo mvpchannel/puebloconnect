@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Linkified from "@/components/Linkified";
 import Link from "next/link";
+import LinkPreviewCard from "@/components/LinkPreviewCard";
+import type { LinkPreview } from "@/lib/link-meta";
 
 type PostCardProps = {
   postId: number;
@@ -13,6 +15,7 @@ type PostCardProps = {
   text: string;
   imageSrc?: string | null;
   videoSrc?: string | null;
+  link?: LinkPreview | null;
   initialLikeCount?: number;
   initialLiked?: boolean;
   initialCommentCount?: number;
@@ -50,6 +53,7 @@ export default function PostCard({
   text,
   imageSrc = null,
   videoSrc = null,
+  link = null,
   initialLikeCount = 0,
   initialLiked = false,
   initialCommentCount = 0,
@@ -234,6 +238,7 @@ export default function PostCard({
           <div className="post-meta">
             <div className="description">
               {text && <p style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}><Linkified text={text} /></p>}
+              {link && <LinkPreviewCard link={link} />}
               {videoSrc && (
                 <video
                   src={videoSrc}

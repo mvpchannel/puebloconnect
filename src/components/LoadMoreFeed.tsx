@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import PostCard from "@/components/PostCard";
+import type { LinkPreview } from "@/lib/link-meta";
 import { formatRelativeTime } from "@/lib/time";
 
 type FeedPostJson = {
@@ -12,6 +13,7 @@ type FeedPostJson = {
   body: string;
   imagePath: string | null;
   videoPath: string | null;
+  link?: LinkPreview | null;
   createdAt: string;
   likeCount: number;
   commentCount: number;
@@ -75,6 +77,7 @@ export default function LoadMoreFeed({ initialCursor, isLoggedIn, currentUserId,
           text={p.body}
           imageSrc={p.imagePath}
           videoSrc={p.videoPath}
+          link={p.link}
           postedIn={p.postedInLabel && p.postedInHref ? { label: p.postedInLabel, href: p.postedInHref } : null}
           initialLikeCount={p.likeCount}
           initialLiked={p.likedByViewer}

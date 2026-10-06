@@ -1,3 +1,4 @@
+import { parseLinkPreview } from "@/lib/link-meta";
 import type { Metadata } from "next";
 import { PLACEHOLDER } from "@/lib/placeholders";
 import { notFound } from "next/navigation";
@@ -170,6 +171,7 @@ export default async function MemberProfilePage({ params }: Props) {
                           text={post.body}
                           imageSrc={post.image_path}
                           videoSrc={post.video_path}
+                          link={parseLinkPreview(post.link_json)}
                           initialLikeCount={post.like_count}
                           initialLiked={Boolean(post.liked_by_viewer)}
                           initialCommentCount={post.comment_count}

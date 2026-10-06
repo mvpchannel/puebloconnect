@@ -1,3 +1,4 @@
+import { parseLinkPreview } from "@/lib/link-meta";
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
 import { listFeedPosts, listPosts, listPostsByAuthor, TargetType } from "@/lib/db";
@@ -57,6 +58,7 @@ export async function GET(req: NextRequest) {
       body: p.body,
       imagePath: p.image_path,
       videoPath: p.video_path,
+      link: parseLinkPreview(p.link_json),
       createdAt: p.created_at,
       likeCount: p.like_count,
       commentCount: p.comment_count,

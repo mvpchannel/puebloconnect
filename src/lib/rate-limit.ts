@@ -38,6 +38,8 @@ export const RATE_LIMITS = {
   upload: { max: 20, windowSeconds: 60 * 60 } as RateLimitPolicy,
   report: { max: 30, windowSeconds: 60 * 60 } as RateLimitPolicy,
   // Page-view beacon, per visitor address: far above what a person browsing can reach.
+  adminLinkPreview: { max: 30, windowSeconds: 600 } as RateLimitPolicy,
+  adminLinkPost: { max: 30, windowSeconds: 600 } as RateLimitPolicy,
   track: { max: 300, windowSeconds: 10 * 60 } as RateLimitPolicy,
 } as const;
 

@@ -25,3 +25,15 @@ export function saveDataUrlImage(dataUrl: string, subdir: string): string | { er
   writeFileSync(path.join(uploadsDir, fileName), buffer);
   return `/uploads/${subdir}/${fileName}`;
 }
+
+// Saves already-downloaded image bytes (type decided from the bytes, 3MB cap).
+export function saveImageBuffer(buffer: Buffer, subdir: string): string | { error: string } {
+  if (buffer.length > 3 * 1024 * 1024) return { error: "Image must be smaller than 3MB." };
+  const ext = sniffImageExt(buffer);
+  if (!ext) return { error: "That file isn't a valid PNG, JPEG, or WEBP image." };
+  const dir = path.join(process.cwd(), "public", "uploads", subdir);
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  const fileName = `${randomUUID()}.${ext}`;
+  writeFileSync(path.join(dir, fileName), buffer);
+  return `/uploads/${subdir}/${fileName}`;
+}
