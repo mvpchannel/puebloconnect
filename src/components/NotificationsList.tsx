@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { formatRelativeTime } from "@/lib/time";
-import { NOTIFICATION_TEXT, NOTIFICATION_LINK, type NotificationItem } from "@/lib/notification-text";
+import { NOTIFICATION_TEXT, NOTIFICATION_LINK, notificationAvatar, type NotificationItem } from "@/lib/notification-text";
 
 // Real backend: GET /api/notifications (src/app/api/notifications/route.ts),
 // same data source and shared text/link mapping as the Header.tsx bell
@@ -43,11 +43,11 @@ export default function NotificationsList({ initial }: { initial: NotificationIt
         {notifications.map((n) => (
           <li key={n.id} style={{ opacity: n.read ? 0.65 : 1 }}>
             <figure>
-              <img src={n.actor?.profilePhotoPath || "/images/defaults/default-avatar-male.jpg"} alt="" />
+              <img src={notificationAvatar(n)} alt="" />
             </figure>
             <div className="notifi-meta">
               <p>
-                <a href={NOTIFICATION_LINK[n.kind]}>{NOTIFICATION_TEXT[n.kind](n.actor?.name || "Someone")}</a>
+                <a href={NOTIFICATION_LINK[n.kind]}>{NOTIFICATION_TEXT[n.kind](n.actor?.name || "Someone", n.message)}</a>
               </p>
               <span>{formatRelativeTime(n.createdAt)}</span>
             </div>

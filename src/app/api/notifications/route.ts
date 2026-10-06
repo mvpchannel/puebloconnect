@@ -8,6 +8,7 @@ export function shapeNotification(n: Notification) {
     kind: n.kind,
     refType: n.ref_type,
     refId: n.ref_id,
+    message: n.message,
     read: n.read_at !== null,
     createdAt: n.created_at,
     actor: n.actor_id

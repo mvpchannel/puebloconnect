@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatRelativeTime } from "@/lib/time";
 import { NAV_ACCOUNT, NAV_PRIMARY } from "@/lib/nav-config";
-import { NOTIFICATION_TEXT, NOTIFICATION_LINK, type NotificationItem } from "@/lib/notification-text";
+import { NOTIFICATION_TEXT, NOTIFICATION_LINK, notificationAvatar, type NotificationItem } from "@/lib/notification-text";
 
 type SessionUser = { id: number; username: string; email: string; role: "member" | "admin" };
 
@@ -409,12 +409,12 @@ export default function Header() {
                     style={{ display: "flex", alignItems: "center", gap: 8, opacity: n.read ? 0.6 : 1 }}
                   >
                     <img
-                      src={n.actor?.profilePhotoPath || "/images/defaults/default-avatar-male.jpg"}
+                      src={notificationAvatar(n)}
                       alt=""
                       style={{ width: 28, height: 28, borderRadius: "50%", objectFit: "cover", flexShrink: 0 }}
                     />
                     <span style={{ flex: 1, fontSize: 13 }}>
-                      {NOTIFICATION_TEXT[n.kind](n.actor?.name || "Someone")}
+                      {NOTIFICATION_TEXT[n.kind](n.actor?.name || "Someone", n.message)}
                       <br />
                       <span style={{ color: "#999", fontSize: 11 }}>{formatRelativeTime(n.createdAt)}</span>
                     </span>

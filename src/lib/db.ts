@@ -1228,20 +1228,21 @@ function getDb(): DatabaseSync {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL REFERENCES users(id),
         actor_id INTEGER REFERENCES users(id),
-        kind TEXT NOT NULL CHECK (kind IN ('friend_request', 'friend_accepted', 'new_message', 'post_like', 'post_comment', 'stream_live')),
+        kind TEXT NOT NULL CHECK (kind IN ('friend_request', 'friend_accepted', 'new_message', 'post_like', 'post_comment', 'stream_live', 'announcement')),
         ref_type TEXT,
         ref_id INTEGER,
+        message TEXT,
         read_at TEXT,
         created_at TEXT NOT NULL DEFAULT (datetime('now'))
       )
     `);
     db.exec(`CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at)`);
 
-    // Databases created before 'stream_live' existed have the old CHECK
-    // list baked into the table; SQLite can't alter a CHECK, so rebuild
-    // the table once (rows are copied as-is).
+    // Databases created before 'announcement' (and the message column) existed
+    // have the old CHECK list baked into the table; SQLite can't alter a CHECK,
+    // so rebuild the table once (rows are copied as-is).
     const notifSql = (db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'notifications'").get() as { sql: string } | undefined)?.sql ?? "";
-    if (notifSql && !notifSql.includes("stream_live")) {
+    if (notifSql && !notifSql.includes("announcement")) {
       db.exec("BEGIN");
       try {
         db.exec(`
@@ -1249,9 +1250,10 @@ function getDb(): DatabaseSync {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL REFERENCES users(id),
             actor_id INTEGER REFERENCES users(id),
-            kind TEXT NOT NULL CHECK (kind IN ('friend_request', 'friend_accepted', 'new_message', 'post_like', 'post_comment', 'stream_live')),
+            kind TEXT NOT NULL CHECK (kind IN ('friend_request', 'friend_accepted', 'new_message', 'post_like', 'post_comment', 'stream_live', 'announcement')),
             ref_type TEXT,
             ref_id INTEGER,
+            message TEXT,
             read_at TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
           );
@@ -5719,7 +5721,7 @@ export function listReportFollowerEmails(reportId: number, excludeUserId?: numbe
 // post_comment) that don't have an email counterpart. This table is
 // additive to the email system, not a replacement for it.
 
-export type NotificationKind = "friend_request" | "friend_accepted" | "new_message" | "post_like" | "post_comment" | "stream_live";
+export type NotificationKind = "friend_request" | "friend_accepted" | "new_message" | "post_like" | "post_comment" | "stream_live" | "announcement";
 
 export type Notification = {
   id: number;
@@ -5728,6 +5730,7 @@ export type Notification = {
   kind: NotificationKind;
   ref_type: string | null;
   ref_id: number | null;
+  message: string | null;
   read_at: string | null;
   created_at: string;
   actor_username: string | null;
@@ -5754,12 +5757,56 @@ export function createNotification(
 
 const NOTIFICATION_SELECT = `
   SELECT
-    n.id, n.user_id, n.actor_id, n.kind, n.ref_type, n.ref_id, n.read_at, n.created_at,
+    n.id, n.user_id, n.actor_id, n.kind, n.ref_type, n.ref_id, n.message, n.read_at, n.created_at,
     u.username AS actor_username, u.first_name AS actor_first_name,
     u.last_name AS actor_last_name, u.profile_photo_path AS actor_profile_photo_path
   FROM notifications n
   LEFT JOIN users u ON u.id = n.actor_id
 `;
+
+// Staff announcement: one in-app notification for every active member, all sharing a
+// batch number (ref_id) so the admin page can show how many people it reached and how
+// many have opened it. Returns the number of members it was sent to.
+export function createAnnouncement(message: string): number {
+  const db = getDb();
+  db.exec("BEGIN");
+  try {
+    const batch = (db
+      .prepare("SELECT COALESCE(MAX(ref_id), 0) + 1 AS b FROM notifications WHERE kind = 'announcement'")
+      .get() as { b: number }).b;
+    const info = db
+      .prepare(
+        `INSERT INTO notifications (user_id, actor_id, kind, ref_type, ref_id, message)
+         SELECT id, NULL, 'announcement', 'announcement', ?, ? FROM users WHERE account_status = 'active'`
+      )
+      .run(batch, message);
+    db.exec("COMMIT");
+    return Number(info.changes);
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
+export type AnnouncementSummary = { batch: number; message: string; sent_at: string; recipients: number; read_count: number };
+
+export function listAnnouncements(limit = 30): AnnouncementSummary[] {
+  const db = getDb();
+  return db
+    .prepare(
+      `SELECT ref_id AS batch, message, MIN(created_at) AS sent_at, COUNT(*) AS recipients,
+              SUM(CASE WHEN read_at IS NOT NULL THEN 1 ELSE 0 END) AS read_count
+       FROM notifications WHERE kind = 'announcement'
+       GROUP BY ref_id ORDER BY ref_id DESC LIMIT ?`
+    )
+    .all(limit) as AnnouncementSummary[];
+}
+
+// Take an announcement back: removes it from every member's notifications.
+export function deleteAnnouncement(batch: number): number {
+  const db = getDb();
+  return Number(db.prepare("DELETE FROM notifications WHERE kind = 'announcement' AND ref_id = ?").run(batch).changes);
+}
 
 export function listNotifications(userId: number, limit = 30): Notification[] {
   const db = getDb();
