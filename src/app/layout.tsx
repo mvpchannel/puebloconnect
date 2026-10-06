@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import PageViewTracker from "@/components/PageViewTracker";
 import { SITE_URL } from "@/lib/site-url";
 
 /**
@@ -72,7 +73,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        {children}
+        <PageViewTracker />
+      </body>
     </html>
   );
 }

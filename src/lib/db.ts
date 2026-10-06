@@ -194,6 +194,22 @@ function getDb(): DatabaseSync {
     // restart and work the same in a single-process deployment. Keyed by
     // an arbitrary "bucket" (e.g. "login:ip:1.2.3.4" or
     // "login:user:someone") + a time window; see rate-limit.ts.
+    // Site traffic: one row per page opened by a person (bots are not recorded). It holds
+    // a one-way visitor fingerprint, never the IP address or any account id.
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS page_views (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        path TEXT NOT NULL,
+        visitor_hash TEXT NOT NULL,
+        source TEXT NOT NULL,
+        country TEXT,
+        region TEXT,
+        city TEXT
+      )
+    `);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_page_views_created ON page_views(created_at)`);
+
     // Small key/value settings staff can change from the admin area (e.g. the
     // social media addresses shown in the site footer).
     db.exec(`
@@ -3528,6 +3544,40 @@ export function setSiteSetting(key: string, value: string | null): void {
     `INSERT INTO site_settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`
   ).run(key, value);
+}
+
+export function recordPageView(v: {
+  path: string;
+  visitorHash: string;
+  source: string;
+  country: string | null;
+  region: string | null;
+  city: string | null;
+}): void {
+  const db = getDb();
+  db.prepare(
+    "INSERT INTO page_views (path, visitor_hash, source, country, region, city) VALUES (?, ?, ?, ?, ?, ?)"
+  ).run(v.path, v.visitorHash, v.source, v.country, v.region, v.city);
+  // Housekeeping: keep about 13 months, which is enough for any chart the admin page draws.
+  if (Math.random() < 0.01) db.prepare("DELETE FROM page_views WHERE created_at < datetime('now', '-400 days')").run();
+}
+
+export type PageViewRow = {
+  created_at: string;
+  path: string;
+  visitor_hash: string;
+  source: string;
+  country: string | null;
+  region: string | null;
+  city: string | null;
+};
+
+// Everything recorded in the last `days` days (a little extra, so Pueblo-time day edges are covered).
+export function listPageViewsSince(days: number): PageViewRow[] {
+  const db = getDb();
+  return db
+    .prepare("SELECT created_at, path, visitor_hash, source, country, region, city FROM page_views WHERE created_at >= datetime('now', ?) ORDER BY created_at")
+    .all(`-${Math.ceil(days) + 1} days`) as PageViewRow[];
 }
 
 export type AdminLocationRow = {

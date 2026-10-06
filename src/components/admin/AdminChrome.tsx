@@ -24,6 +24,7 @@ const EXTRAS_LINKS: { href: string; label: string }[] = [
 ];
 
 const MORE_LINKS: { href: string; label: string; icon: string }[] = [
+  { href: "/admin/traffic", label: "Traffic", icon: "fa-line-chart" },
   { href: "/admin/locations", label: "Locations", icon: "fa-inbox" },
   { href: "/admin/posting-panel", label: "Create a post", icon: "fa-hdd-o" },
   { href: "/admin/post-preview", label: "Preview a post", icon: "fa-glass" },
