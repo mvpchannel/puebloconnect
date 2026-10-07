@@ -1,0 +1,47 @@
+/* Pueblo Connect: electric-blue glow on things you can click, and nothing else.
+   Plain text never reacts. Remove this file's <link> to undo it. */
+:root {
+  --pc-glow-blue: #00b4ff;
+  --pc-glow-text: 0 0 5px rgba(0, 180, 255, .70), 0 0 12px rgba(0, 150, 255, .40);
+  --pc-glow-box: 0 0 8px rgba(0, 180, 255, .50), 0 0 18px rgba(0, 150, 255, .22);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  a, button, .btn, .mtr-btn, [role="button"], input[type="submit"], input[type="button"] {
+    transition: text-shadow .2s ease, box-shadow .2s ease, border-color .2s ease;
+  }
+}
+
+/* Links, menus, sidebar entries, usernames */
+a:hover, a:focus-visible { text-shadow: var(--pc-glow-text); }
+/* Pictures that are links glow around the picture, not as text */
+a:hover > img, a:focus-visible > img { text-shadow: none; }
+
+/* Buttons and calls to action */
+button:hover, button:focus-visible,
+.btn:hover, .btn:focus-visible,
+.mtr-btn:hover, .mtr-btn:focus-visible,
+[role="button"]:hover, [role="button"]:focus-visible,
+input[type="submit"]:hover, input[type="submit"]:focus-visible,
+input[type="button"]:hover, input[type="button"]:focus-visible {
+  box-shadow: var(--pc-glow-box);
+  border-color: var(--pc-glow-blue);
+}
+
+/* Cards that are themselves links (preview cards, business cards) */
+a[class*="card"]:hover, a[class*="card"]:focus-visible {
+  box-shadow: var(--pc-glow-box), 0 10px 24px rgba(20, 40, 80, .16);
+  border-color: var(--pc-glow-blue);
+  text-shadow: none;
+}
+
+/* Keyboard users get a matching ring */
+a:focus-visible, button:focus-visible, .btn:focus-visible {
+  outline: 2px solid var(--pc-glow-blue);
+  outline-offset: 2px;
+}
+
+/* Disabled controls stay calm */
+button:disabled:hover, .btn.disabled:hover, [aria-disabled="true"]:hover {
+  box-shadow: none; text-shadow: none;
+}

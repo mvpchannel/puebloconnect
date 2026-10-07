@@ -21,6 +21,7 @@ export default function SiteLayout({ children }: { children: React.ReactNode }) 
       <link rel="stylesheet" href="/css/style.css" />
       <link rel="stylesheet" href="/css/color.css" />
       <link rel="stylesheet" href="/css/responsive.css" />
+      <link rel="stylesheet" href="/css/glow.css" />
       <div className="theme-layout">
         <div className="postoverlay" />
         {children}

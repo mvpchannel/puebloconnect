@@ -26,6 +26,7 @@ const ADMIN_CSS = [
   "main-style.css",
   "color.css",
   "responsive.css",
+  "glow.css",
   "fullcalendar.min.css",
   "jalendar.css",
   "select2.min.css",
