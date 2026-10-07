@@ -193,7 +193,7 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     screenCanvas.width = 512;
     screenCanvas.height = 288;
     const ctx = screenCanvas.getContext("2d")!;
-    const screenInfo = opts.screen ?? { headline: "PUEBLO LIVE", status: "Watch at pueblo.connect/live" };
+    const screenInfo = opts.screen ?? { headline: "PUEBLO LIVE", status: "Watch at puebloconnect.net/live" };
     ctx.fillStyle = "#101820";
     ctx.fillRect(0, 0, screenCanvas.width, screenCanvas.height);
     ctx.fillStyle = "#ffffff";
@@ -776,7 +776,7 @@ export function createCityEngine(opts: CityEngineOptions): CityEngine {
     clickables.push(menuBoard);
 
     // Right wall: the Pueblo screen (a sign, not a video player).
-    const info = opts.screen ?? { headline: "PUEBLO LIVE", status: "Watch at pueblo.connect/live" };
+    const info = opts.screen ?? { headline: "PUEBLO LIVE", status: "Watch at puebloconnect.net/live" };
     ibox(0.3, 6, 10.4, 0x111111, halfW - 0.4, 6, -1);
     const tv = plane(9.6, 5.2, boardTexture(["PUEBLO LIVE", info.headline, info.status], "#101820", "#ffffff", "#41d4f4"), halfW - 0.6, 6, -1, -Math.PI / 2);
     tv.userData.hotspot = "tv";

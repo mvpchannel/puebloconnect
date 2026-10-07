@@ -14,7 +14,7 @@ runs the app plus Caddy, which gets and renews the HTTPS certificate on its own.
 ## 1. Server and DNS
 1. Create a server with Ubuntu 22.04+ , 1 GB RAM minimum (2 GB recommended for the build), and install Docker (`curl -fsSL https://get.docker.com | sh`).
 2. Open ports 80 and 443 in its firewall.
-3. At your domain registrar add `A` records for `pueblo.connect` **and** `www.pueblo.connect` pointing to the server's IP. Wait until they resolve; Caddy cannot get a certificate before that.
+3. At your domain registrar add `A` records for `puebloconnect.net` **and** `www.puebloconnect.net` pointing to the server's IP. Wait until they resolve; Caddy cannot get a certificate before that.
 
 ## 2. Get the code and configure
 ```bash
@@ -26,17 +26,17 @@ nano .env.production
 ```
 | Variable | Needed | Notes |
 |---|---|---|
-| `DOMAIN`, `APP_URL` | yes | `pueblo.connect` / `https://pueblo.connect`. `APP_URL` is also used at build time. |
+| `DOMAIN`, `APP_URL` | yes | `puebloconnect.net` / `https://puebloconnect.net`. `APP_URL` is also used at build time. |
 | `SESSION_SECRET` | yes | Long random string; app refuses to start without it. Changing it logs everyone out. |
 | `RESEND_API_KEY`, `EMAIL_FROM_ADDRESS` | for real email | Verify the sending domain in Resend first. Without a key, emails are only written to `data/outbox` — signup verification and password reset will not reach people. |
-| `STRIPE_*` | for paid memberships | Start with `sk_test_` keys. Webhook endpoint: `https://pueblo.connect/api/stripe/webhook`. |
+| `STRIPE_*` | for paid memberships | Start with `sk_test_` keys. Webhook endpoint: `https://puebloconnect.net/api/stripe/webhook`. |
 
 ## 3. Build and start
 ```bash
 docker compose --env-file .env.production up -d --build
 docker compose logs -f app      # wait for "Ready"
 ```
-Visit https://pueblo.connect.
+Visit https://puebloconnect.net.
 
 ## 4. Create the first admin
 ```bash
