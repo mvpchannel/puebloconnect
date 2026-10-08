@@ -26,7 +26,10 @@ export async function POST(req: NextRequest) {
     if (!path.startsWith("/") || path.startsWith("/admin") || path.startsWith("/api")) return done();
     const referrer = typeof body.referrer === "string" ? body.referrer.slice(0, 500) : "";
 
-    const secret = process.env.SESSION_SECRET || "pueblo-connect";
+    // No guessable fallback in production: without a secret the visitor hash
+    // could be reversed, so skip counting instead.
+    const secret = process.env.SESSION_SECRET || (process.env.NODE_ENV === "production" ? "" : "pueblo-connect");
+    if (!secret) return done();
     const geo = geoFromHeaders((n) => req.headers.get(n));
     recordPageView({
       path,
