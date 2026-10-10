@@ -6,7 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import NotificationsList from "@/components/NotificationsList";
 import { getCurrentUser } from "@/lib/require-user";
 import { listNotifications } from "@/lib/db";
-import { shapeNotification } from "@/app/api/notifications/route";
+import { shapeNotification } from "@/lib/notification-shape";
 
 export const metadata: Metadata = {
   title: "Notifications",

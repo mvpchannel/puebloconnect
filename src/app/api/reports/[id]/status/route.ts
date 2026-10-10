@@ -9,7 +9,7 @@ import {
   enqueueEmail,
 } from "@/lib/db";
 import { processEmailQueue } from "@/lib/email";
-import { shapeReport } from "../../route";
+import { shapeReport } from "@/lib/report-shape";
 
 const VALID_STATUSES: ReportStatus[] = ["submitted", "acknowledged", "in_progress", "resolved", "closed"];
 const MAX_NOTE_LENGTH = 500;

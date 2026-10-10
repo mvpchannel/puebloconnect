@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
 import { getNeighborhoodReportById, isFollowingReport } from "@/lib/db";
-import { shapeReport } from "../route";
+import { shapeReport } from "@/lib/report-shape";
 
 // GET /api/reports/:id — a single report, with the viewer's own
 // tracking state. Public.

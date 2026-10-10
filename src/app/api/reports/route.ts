@@ -5,8 +5,8 @@ import {
   listNeighborhoodReports,
   ReportCategory,
   ReportStatus,
-  NeighborhoodReport,
 } from "@/lib/db";
+import { shapeReport } from "@/lib/report-shape";
 
 const VALID_CATEGORIES: ReportCategory[] = ["street_light", "dumped_item", "park_maintenance", "traffic_hazard", "other"];
 const VALID_STATUSES: ReportStatus[] = ["submitted", "acknowledged", "in_progress", "resolved", "closed"];
@@ -20,27 +20,6 @@ const MAX_LOCATION_TEXT_LENGTH = 200;
 // multi-megabyte image (or an abusive request) from bloating the
 // database, not to size-limit a normal photo.
 const MAX_PHOTO_URL_LENGTH = 4_000_000;
-
-export function shapeReport(r: NeighborhoodReport) {
-  return {
-    id: r.id,
-    reporterId: r.reporter_id,
-    reporterName: [r.reporter_first_name, r.reporter_last_name].filter(Boolean).join(" ") || r.reporter_username,
-    category: r.category,
-    description: r.description,
-    photoUrl: r.photo_url,
-    hasPhoto: Boolean(r.has_photo),
-    locationText: r.location_text,
-    latitude: r.latitude,
-    longitude: r.longitude,
-    status: r.status,
-    resolutionNote: r.resolution_note,
-    resolvedAt: r.resolved_at,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at,
-    followerCount: r.follower_count,
-  };
-}
 
 // GET /api/reports?status=&category=&mine=1 — browse reports, newest
 // first. Public, like the rest of the site's browse pages.

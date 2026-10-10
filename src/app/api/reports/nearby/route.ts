@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireUser } from "@/lib/require-user";
 import { getUserById, findNearbyNeighborhoodReports } from "@/lib/db";
 import { boundingBox, haversineMiles } from "@/lib/geo";
-import { shapeReport } from "../route";
+import { shapeReport } from "@/lib/report-shape";
 
 const DEFAULT_RADIUS_MILES = 5;
 const MAX_RADIUS_MILES = 100;
