@@ -38,7 +38,13 @@ export default function Page() {
   // middleware.ts already guarantees a non-null admin session before this
   // page renders; -1 is an unreachable fallback to satisfy the type.
   const currentUserId = session?.sub ?? -1;
-  const conversations = listConversations(currentUserId);
+  const conversations = listConversations(currentUserId).map((c) => ({
+    otherUserId: c.other_user_id,
+    otherName: [c.other_first_name, c.other_last_name].filter(Boolean).join(" ") || c.other_username,
+    otherProfilePhotoPath: c.other_profile_photo_path,
+    lastBody: c.last_body,
+    unreadCount: c.unread_count,
+  }));
 
   return (
     <div className="row">

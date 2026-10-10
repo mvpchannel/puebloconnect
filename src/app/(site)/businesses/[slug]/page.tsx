@@ -293,7 +293,13 @@ export default async function BusinessChannelPage({
                     {isOwner && (
                       <BusinessOwnerPanel
                         slug={business.slug}
-                        menuItems={menuItems}
+                        menuItems={menuItems.map((m) => ({
+                          id: m.id,
+                          section: m.section,
+                          name: m.name,
+                          description: m.description,
+                          priceCents: m.price_cents,
+                        }))}
                         jobs={jobs}
                         deals={allDeals.map((d) => ({
                           id: d.id,

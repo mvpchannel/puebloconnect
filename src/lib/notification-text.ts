@@ -2,7 +2,7 @@
 // page (NotificationsList.tsx) — one place for "what does each
 // notification kind say and link to" so the two don't drift apart.
 
-export type NotificationActor = { id: number; username: string; name: string; profilePhotoPath: string | null } | null;
+export type NotificationActor = { id: number; username: string | null; name: string | null; profilePhotoPath: string | null } | null;
 
 export type NotificationItem = {
   id: number;

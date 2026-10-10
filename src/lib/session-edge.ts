@@ -43,7 +43,7 @@ export async function verifySessionEdge(
 
   const key = await crypto.subtle.importKey(
     "raw",
-    utf8ToUint8Array(secret),
+    utf8ToUint8Array(secret) as BufferSource,
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["verify"]
@@ -52,8 +52,8 @@ export async function verifySessionEdge(
   const valid = await crypto.subtle.verify(
     "HMAC",
     key,
-    b64urlToUint8Array(sigB64),
-    utf8ToUint8Array(payloadB64)
+    b64urlToUint8Array(sigB64) as BufferSource,
+    utf8ToUint8Array(payloadB64) as BufferSource
   );
   if (!valid) return null;
 
